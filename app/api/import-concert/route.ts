@@ -26,12 +26,50 @@ export async function POST(request: Request) {
     const length = Number(response.headers.get('content-length') || 0);
     if (length > 2_000_000) return Response.json({ error: '페이지가 너무 커서 자동으로 불러올 수 없어요.' }, { status: 413 });
     const html = (await response.text()).slice(0, 2_000_000);
-    const metadata = extractMetadata(html, url);
+    const metadata = url.hostname.toLowerCase().includes('yes24.com') ? extractYes24Metadata(html, url) : extractMetadata(html, url);
     return Response.json(metadata);
   } catch (error) {
     console.error('concert import failed', error);
     return Response.json({ error: '예매처가 자동 불러오기를 허용하지 않거나 페이지가 응답하지 않았어요.' }, { status: 502 });
   } finally { clearTimeout(timer); }
+}
+
+function extractYes24Metadata(html: string, url: URL) {
+  const meta = (property: string) => decode(matchFirst(html, new RegExp(`<meta[^>]+(?:property|name)=["']${escapeRegex(property)}["'][^>]+content=["']([^"']+)["']`, 'i')) || matchFirst(html, new RegExp(`<meta[^>]+content=["']([^"']+)["'][^>]+(?:property|name)=["']${escapeRegex(property)}["']`, 'i')));
+  const field = (label: string) => stripTags(matchFirst(html, new RegExp(`<dt[^>]*>\\s*${escapeRegex(label)}\\s*</dt>\\s*<dd[^>]*>([\\s\\S]*?)</dd>`, 'i')));
+  const title = meta('og:title').replace(/^\[예스24 티켓\]\s*/, '').trim() || decode(matchFirst(html, /<em[^>]+class=["'][^"']*gd_name[^"']*["'][^>]*>([\s\S]*?)<\/em>/i));
+  const period = field('일시') || meta('description').match(/일시:\s*(20\d{2}[.\/-]\d{1,2}[.\/-]\d{1,2}\s*~\s*20\d{2}[.\/-]\d{1,2}[.\/-]\d{1,2})/)?.[1] || '';
+  const range = period.match(/(20\d{2})[.\/-](\d{1,2})[.\/-](\d{1,2})\s*~\s*(20\d{2})[.\/-](\d{1,2})[.\/-](\d{1,2})/);
+  const single = period.match(/(20\d{2})[.\/-](\d{1,2})[.\/-](\d{1,2})/);
+  const dateCandidates = range
+    ? expandKoreanDateRange(`${range[1]}-${range[2].padStart(2, '0')}-${range[3].padStart(2, '0')}`, `${range[4]}-${range[5].padStart(2, '0')}-${range[6].padStart(2, '0')}`)
+    : single ? [`${single[1]}-${single[2].padStart(2, '0')}-${single[3].padStart(2, '0')}T00:00:00+09:00`] : [];
+  const priceSection = matchFirst(html, /<dl[^>]+class=["'][^"']*gd_priceDl[^"']*["'][^>]*>([\s\S]*?)<\/dl>/i);
+  const priceCandidates = [...new Set([...stripTags(priceSection).matchAll(/([1-9]\d{0,2}(?:,\d{3})+)\s*원/g)].map((match) => Number(match[1].replaceAll(',', ''))))].filter((value) => value >= 1000 && value <= 10_000_000);
+  const leadRole = decode(matchFirst(html, /id=["']HidLeadRole["'][^>]+value=["']([^"']*)["']/i) || matchFirst(html, /value=["']([^"']*)["'][^>]+id=["']HidLeadRole["']/i));
+  const artists = leadRole && leadRole !== '-' ? leadRole.split(/[,/]/).map((value) => value.trim()).filter(Boolean) : [];
+  const address = decode(matchFirst(html, /id=["']HidRegionName["'][^>]+value=["']([^"']*)["']/i) || matchFirst(html, /value=["']([^"']*)["'][^>]+id=["']HidRegionName["']/i));
+  const warnings: string[] = [];
+  if (!artists.length) warnings.push('출연진을 직접 확인해 주세요.');
+  if (dateCandidates.length > 1) warnings.push(`${period.trim()} 기간 중 실제 관람일을 선택해 주세요.`);
+  if (!dateCandidates.length) warnings.push('공연 날짜를 직접 확인해 주세요.');
+  if (!priceCandidates.length) warnings.push('티켓 가격을 직접 확인해 주세요.');
+  return { title, artists, venue: field('장소').replace(/\s*>\s*$/, ''), address, bookingProvider: 'YES24 티켓', sourceUrl: url.toString(), posterUrl: meta('og:image'), dateCandidates, priceCandidates, warnings };
+}
+
+function expandKoreanDateRange(start: string, end: string) {
+  const startParts = start.split('-').map(Number);
+  const endParts = end.split('-').map(Number);
+  const startTime = Date.UTC(startParts[0], startParts[1] - 1, startParts[2]);
+  const endTime = Date.UTC(endParts[0], endParts[1] - 1, endParts[2]);
+  if (!Number.isFinite(startTime) || !Number.isFinite(endTime) || endTime < startTime) return [];
+  const result: string[] = [];
+  for (let cursor = startTime; cursor <= endTime && result.length < 31; cursor += 86_400_000) result.push(`${new Date(cursor).toISOString().slice(0, 10)}T00:00:00+09:00`);
+  return result;
+}
+
+function stripTags(value: string) {
+  return decode(value.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' '));
 }
 
 function getNolGoodsCode(url: URL) {
@@ -144,9 +182,10 @@ function extractMetadata(html: string, url: URL) {
   const addressValue = event?.location?.address;
   const address = decode(typeof addressValue === 'string' ? addressValue : addressValue ? [addressValue.streetAddress, addressValue.addressLocality, addressValue.addressCountry].filter(Boolean).join(' ') : '');
   const dates = [...new Set([event?.startDate, ...([...html.matchAll(/20\d{2}[.\/-]\s?\d{1,2}[.\/-]\s?\d{1,2}/g)].map((match) => match[0]))].filter(Boolean))].slice(0, 8);
-  const prices = [...new Set([...html.matchAll(/(?:KRW|₩|가격|티켓가)?\s*([1-9]\d{1,2}(?:,\d{3})+)\s*원?/g)].map((match) => Number(match[1].replaceAll(',', ''))).filter((value) => value >= 1000 && value <= 10_000_000))].slice(0, 8);
+  const prices = [...new Set([...html.matchAll(/([1-9]\d{1,2}(?:,\d{3})+)\s*원/g)].map((match) => Number(match[1].replaceAll(',', ''))).filter((value) => value >= 1000 && value <= 10_000_000))].slice(0, 8);
   const provider = url.hostname.includes('yes24') ? 'YES24 티켓' : url.hostname.includes('melon') ? '멜론티켓' : 'NOL 티켓';
-  const poster = decode(event?.image?.url || event?.image?.[0] || event?.image || meta('og:image') || meta('twitter:image'));
+  const eventImage = typeof event?.image === 'string' ? event.image : Array.isArray(event?.image) ? event.image[0] : event?.image?.url;
+  const poster = decode(eventImage || meta('og:image') || meta('twitter:image'));
   const warnings = [];
   if (!title) warnings.push('공연명을 찾지 못했어요.');
   if (!dates.length) warnings.push('관람 회차를 직접 선택해 주세요.');
