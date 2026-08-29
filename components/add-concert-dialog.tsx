@@ -26,12 +26,14 @@ export function AddConcertDialog({ open, onOpenChange, onSave }: Props) {
   const [coords, setCoords] = useState<GeocodeCandidate | null>(null);
   const [candidates, setCandidates] = useState<GeocodeCandidate[]>([]);
   const [imageFile, setImageFile] = useState<File>();
+  const [dateCandidates, setDateCandidates] = useState<string[]>([]);
+  const [priceCandidates, setPriceCandidates] = useState<number[]>([]);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
 
   useEffect(() => {
     if (!open) {
-      setForm(emptyForm); setCoords(null); setCandidates([]); setImageFile(undefined); setMessage('');
+      setForm(emptyForm); setCoords(null); setCandidates([]); setImageFile(undefined); setDateCandidates([]); setPriceCandidates([]); setMessage('');
     }
   }, [open]);
 
@@ -52,9 +54,12 @@ export function AddConcertDialog({ open, onOpenChange, onSave }: Props) {
         address: data.address || prev.address,
         bookingProvider: data.bookingProvider || prev.bookingProvider,
         posterUrl: data.posterUrl || prev.posterUrl,
+        performanceAt: data.dateCandidates[0] ? toDateTimeInput(data.dateCandidates[0]) : prev.performanceAt,
         listPrice: data.priceCandidates[0]?.toString() || prev.listPrice,
       }));
-      setMessage(data.warnings[0] || '정보를 불러왔어요. 날짜와 가격을 꼭 확인해 주세요.');
+      setDateCandidates(data.dateCandidates || []);
+      setPriceCandidates(data.priceCandidates || []);
+      setMessage(data.warnings.join(' ') || '정보를 불러왔어요. 날짜와 가격을 꼭 확인해 주세요.');
       setMode('direct');
     } catch (error) {
       setMessage(error instanceof Error ? `${error.message} 직접 입력으로 이어갈게요.` : '직접 입력으로 이어갈게요.');
@@ -117,6 +122,8 @@ export function AddConcertDialog({ open, onOpenChange, onSave }: Props) {
           </div>
         ) : (
           <form onSubmit={submit} className="space-y-4 px-5 pb-6">
+            {dateCandidates.length > 1 && <CandidateGroup label="공연 회차 후보">{dateCandidates.map((candidate) => <button key={candidate} type="button" onClick={() => update('performanceAt', toDateTimeInput(candidate))} className={`rounded-full border px-3 py-2 text-xs ${form.performanceAt === toDateTimeInput(candidate) ? 'border-[#dfff94] bg-[#dfff94] text-black' : 'border-white/15 text-white/60'}`}>{new Intl.DateTimeFormat('ko-KR', { month: 'long', day: 'numeric', weekday: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Seoul' }).format(new Date(candidate))}</button>)}</CandidateGroup>}
+            {priceCandidates.length > 1 && <CandidateGroup label="가격 후보">{priceCandidates.map((candidate) => <button key={candidate} type="button" onClick={() => update('listPrice', candidate.toString())} className={`rounded-full border px-3 py-2 text-xs ${form.listPrice === candidate.toString() ? 'border-[#dfff94] bg-[#dfff94] text-black' : 'border-white/15 text-white/60'}`}>₩{candidate.toLocaleString('ko-KR')}</button>)}</CandidateGroup>}
             <div className="grid gap-4 sm:grid-cols-2">
               <Field label="공연명"><Input value={form.title} onChange={(e) => update('title', e.target.value)} /></Field>
               <Field label="아티스트"><Input value={form.artists} onChange={(e) => update('artists', e.target.value)} placeholder="쉼표로 구분" /></Field>
@@ -144,4 +151,15 @@ export function AddConcertDialog({ open, onOpenChange, onSave }: Props) {
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return <label className="block text-xs font-medium text-white/60"><span className="mb-2 block">{label}</span>{children}</label>;
+}
+
+function CandidateGroup({ label, children }: { label: string; children: React.ReactNode }) {
+  return <fieldset className="rounded-2xl bg-white/5 p-3"><legend className="px-1 text-xs text-white/50">{label}</legend><div className="mt-1 flex flex-wrap gap-2">{children}</div></fieldset>;
+}
+
+function toDateTimeInput(value: string) {
+  const date = new Date(value);
+  const parts = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false }).formatToParts(date);
+  const get = (type: Intl.DateTimeFormatPartTypes) => parts.find((part) => part.type === type)?.value || '';
+  return `${get('year')}-${get('month')}-${get('day')}T${get('hour')}:${get('minute')}`;
 }
