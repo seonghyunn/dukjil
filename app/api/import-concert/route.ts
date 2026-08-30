@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 const schema = z.object({ url: z.string().url().max(2048) });
-const allowedHosts = new Set(['ticket.interpark.com', 'tickets.interpark.com', 'mobileticket.interpark.com', 'ticket.yes24.com', 'm.ticket.yes24.com', 'ticket.melon.com']);
+const allowedHosts = new Set(['ticket.interpark.com', 'tickets.interpark.com', 'mobileticket.interpark.com', 'ticket.yes24.com', 'm.ticket.yes24.com', 'ticket.melon.com', 'm.ticket.melon.com']);
 
 export async function POST(request: Request) {
   const parsed = schema.safeParse(await request.json().catch(() => null));
@@ -12,6 +12,8 @@ export async function POST(request: Request) {
   try {
     const nolGoodsCode = getNolGoodsCode(url);
     if (nolGoodsCode) return Response.json(await importNolConcert(nolGoodsCode, url, controller.signal));
+    const melonProdId = getMelonProdId(url);
+    if (melonProdId) return Response.json(await importMelonConcert(melonProdId, url, controller.signal));
 
     let response: Response | null = null;
     for (let redirects = 0; redirects < 4; redirects += 1) {
@@ -75,6 +77,118 @@ function stripTags(value: string) {
 function getNolGoodsCode(url: URL) {
   if (!url.hostname.toLowerCase().includes('interpark.com')) return '';
   return url.pathname.match(/\/goods\/(\d{8})(?:\/|$)/i)?.[1] || url.searchParams.get('GoodsCode')?.match(/^\d{8}$/)?.[0] || '';
+}
+
+function getMelonProdId(url: URL) {
+  if (!url.hostname.toLowerCase().includes('melon.com')) return '';
+  const hashQuery = url.hash.includes('?') ? url.hash.slice(url.hash.indexOf('?') + 1) : '';
+  const value = url.searchParams.get('prodId') || new URLSearchParams(hashQuery).get('prodId') || '';
+  return /^\d{1,10}$/.test(value) ? value : '';
+}
+
+async function importMelonConcert(prodId: string, sourceUrl: URL, signal: AbortSignal) {
+  const detailResponse = await fetchMelonJson(`/poc/performance/detail.json?prodId=${encodeURIComponent(prodId)}&v=1`, signal);
+  const product = detailResponse?.result === 0 ? detailResponse.data : null;
+  if (!product?.title) throw new Error('Melon detail unavailable');
+  const placeResponse = product.placeId
+    ? await fetchMelonJson(`/poc/place/detail.json?placeId=${encodeURIComponent(String(product.placeId))}&v=1`, signal).catch(() => null)
+    : null;
+  const place = placeResponse?.result === 0 ? placeResponse.data : null;
+  const hall = Array.isArray(place?.placeHallVoList) ? place.placeHallVoList.find((item: any) => Number(item?.hallId) === Number(product.hallId)) : null;
+  const venueBase = decode(place?.name || product.placeName);
+  const hallName = decode(hall?.name || product.availPlaceInfo);
+  const venue = hallName && hallName !== venueBase ? `${venueBase} ${hallName}` : venueBase;
+  const artists = parseMelonArtists(product.actorJson);
+  const priceCandidates = parseMelonPrices(product);
+  const dateCandidates = parseMelonDates(product.perfTimeInfo, product.periodInfo, product.compsVO);
+  const warnings: string[] = [];
+  if (!artists.length) warnings.push('아티스트를 직접 확인해 주세요.');
+  if (dateCandidates.length > 1) warnings.push('관람한 공연일을 선택해 주세요.');
+  if (!dateCandidates.length) warnings.push('공연 날짜를 직접 확인해 주세요.');
+  if (!priceCandidates.length) warnings.push('티켓 가격을 직접 확인해 주세요.');
+  return {
+    title: decode(product.title),
+    artists,
+    venue,
+    address: decode(place?.addr || ''),
+    bookingProvider: '멜론티켓',
+    sourceUrl: sourceUrl.toString(),
+    posterUrl: melonAssetUrl(product.posterImg || product.coverImg),
+    dateCandidates,
+    priceCandidates,
+    warnings,
+  };
+}
+
+async function fetchMelonJson(path: string, signal: AbortSignal) {
+  const response = await fetch(`https://tktapi.melon.com${path}`, {
+    redirect: 'manual', signal,
+    headers: {
+      accept: 'application/json',
+      origin: 'https://m.ticket.melon.com',
+      referer: 'https://m.ticket.melon.com/',
+      'user-agent': 'Mozilla/5.0 (compatible; DukjilLog/1.0; +concert metadata import)',
+    },
+  });
+  if (!response.ok || !(response.headers.get('content-type') || '').includes('json')) throw new Error('Melon API unavailable');
+  const length = Number(response.headers.get('content-length') || 0);
+  if (length > 1_000_000) throw new Error('Melon response too large');
+  return JSON.parse((await response.text()).slice(0, 1_000_000));
+}
+
+function parseMelonArtists(value: unknown) {
+  try {
+    const parsed = typeof value === 'string' ? JSON.parse(value) : value;
+    const list = Array.isArray((parsed as any)?.data?.list) ? (parsed as any).data.list : [];
+    return [...new Set(list.map((item: any) => decode(item?.artistRepNm || item?.artistNameWebList)).filter(Boolean))].slice(0, 20) as string[];
+  } catch { return []; }
+}
+
+function parseMelonPrices(product: any) {
+  const values: number[] = [];
+  if (Array.isArray(product?.gradelist)) product.gradelist.forEach((item: any) => values.push(Number(item?.basePrice)));
+  try {
+    const parsed = typeof product?.seatGradeJson === 'string' ? JSON.parse(product.seatGradeJson) : product?.seatGradeJson;
+    if (Array.isArray(parsed?.data?.list)) parsed.data.list.forEach((item: any) => values.push(Number(item?.basePrice)));
+  } catch { /* gradelist 값으로 계속 진행해요. */ }
+  return [...new Set(values.filter((value) => Number.isFinite(value) && value >= 1000 && value <= 10_000_000))].sort((a, b) => a - b).slice(0, 12);
+}
+
+function parseMelonDates(perfTimeInfo: unknown, periodInfo: unknown, comps: any) {
+  const text = stripTags(String(perfTimeInfo || '')).replace(/\s+/g, ' ');
+  const range = text.match(/(20\d{2})\s*년\s*(\d{1,2})\s*월\s*(\d{1,2})\s*일(?:\s*\([^)]*\))?\s*~\s*(?:(20\d{2})\s*년\s*)?(\d{1,2})\s*월\s*(\d{1,2})\s*일(?:\s*\([^)]*\))?(?:\s*(오전|오후)?\s*(\d{1,2})\s*시(?:\s*(\d{1,2})\s*분)?)?/);
+  if (range) {
+    const hour = koreanHour(range[8], range[7]);
+    const minute = Number(range[9] || 0);
+    const start = `${range[1]}-${range[2].padStart(2, '0')}-${range[3].padStart(2, '0')}`;
+    const end = `${range[4] || range[1]}-${range[5].padStart(2, '0')}-${range[6].padStart(2, '0')}`;
+    return expandKoreanDateRange(start, end).map((value) => value.replace('T00:00:00', `T${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}:00`));
+  }
+  const explicit = [...text.matchAll(/(20\d{2})\s*년\s*(\d{1,2})\s*월\s*(\d{1,2})\s*일(?:\s*\([^)]*\))?(?:\s*(오전|오후)?\s*(\d{1,2})\s*시(?:\s*(\d{1,2})\s*분)?)?/g)].map((match) => {
+    const hour = koreanHour(match[5], match[4]);
+    return `${match[1]}-${match[2].padStart(2, '0')}-${match[3].padStart(2, '0')}T${String(hour).padStart(2, '0')}:${String(Number(match[6] || 0)).padStart(2, '0')}:00+09:00`;
+  });
+  if (explicit.length) return [...new Set(explicit)];
+  const period = String(periodInfo || '').match(/(20\d{2})[.\/-](\d{1,2})[.\/-](\d{1,2})\s*[-~]\s*(20\d{2})[.\/-](\d{1,2})[.\/-](\d{1,2})/);
+  const compactStart = String(comps?.performanceStartDay || '');
+  const compactEnd = String(comps?.performanceEndDay || '');
+  const start = period ? `${period[1]}-${period[2].padStart(2, '0')}-${period[3].padStart(2, '0')}` : /^20\d{6}$/.test(compactStart) ? `${compactStart.slice(0, 4)}-${compactStart.slice(4, 6)}-${compactStart.slice(6, 8)}` : '';
+  const end = period ? `${period[4]}-${period[5].padStart(2, '0')}-${period[6].padStart(2, '0')}` : /^20\d{6}$/.test(compactEnd) ? `${compactEnd.slice(0, 4)}-${compactEnd.slice(4, 6)}-${compactEnd.slice(6, 8)}` : start;
+  return start ? expandKoreanDateRange(start, end || start) : [];
+}
+
+function koreanHour(value: unknown, period: unknown) {
+  let hour = Number(value || 0);
+  if (period === '오후' && hour < 12) hour += 12;
+  if (period === '오전' && hour === 12) hour = 0;
+  return hour;
+}
+
+function melonAssetUrl(value: unknown) {
+  const path = decode(value);
+  if (path.startsWith('https://')) return path;
+  if (path.startsWith('//')) return `https:${path}`;
+  return path.startsWith('/') ? `https://cdnticket.melon.co.kr${path}` : '';
 }
 
 async function importNolConcert(goodsCode: string, sourceUrl: URL, signal: AbortSignal) {
