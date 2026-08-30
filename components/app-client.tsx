@@ -193,7 +193,7 @@ export function AppClient() {
         {view === 'now' && <NowView concerts={concerts} year={statsYear} onYearChange={setStatsYear} onSelect={setSelected} onBulkEdit={() => setBulkEditOpen(true)} />}
         {view === 'calendar' && <CalendarView concerts={concerts} onSelect={setSelected} />}
         {view === 'map' && <JourneyMap concerts={concerts} profile={profile} onProfileChange={saveProfile} />}
-        <button aria-label="공연 추가" onClick={() => setAddOpen(true)} className="fixed bottom-[124px] right-5 z-20 grid size-12 place-items-center rounded-full bg-[#ff6b61] text-black shadow-xl shadow-black/40 sm:right-[max(24px,calc((100vw-1152px)/2))]"><Plus /></button>
+        <button aria-label="공연 추가" onClick={() => setAddOpen(true)} className="fixed bottom-[104px] right-5 z-20 grid size-12 place-items-center rounded-full bg-[#ff6b61] text-black shadow-xl shadow-black/40 sm:right-[max(24px,calc((100vw-1152px)/2))]"><Plus /></button>
         <nav aria-label="주요 메뉴" className="fixed inset-x-0 bottom-4 z-20 mx-auto flex w-[calc(100%-32px)] max-w-[430px] items-center justify-around rounded-[24px] border border-black/10 bg-[#fffdf8e8] p-2 shadow-[0_16px_45px_rgba(46,35,20,.18)] backdrop-blur-xl">
           <NavButton active={view === 'now'} onClick={() => setView('now')} icon={<WalletCards />} label="지금" />
           <NavButton active={view === 'calendar'} onClick={() => setView('calendar')} icon={<CalendarDays />} label="캘린더" />
