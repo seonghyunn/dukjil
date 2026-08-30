@@ -136,7 +136,7 @@ body {
 
 @layer components {
   .eyebrow {
-    @apply text-[11px] font-medium uppercase tracking-[0.22em] text-[#b9ff66];
+    @apply text-[11px] font-medium uppercase tracking-[0.22em] text-[#d94d44];
   }
   .screen-title {
     @apply mt-1 text-2xl font-semibold tracking-[-0.04em] sm:text-3xl;
@@ -157,7 +157,7 @@ body {
   .ticket-fallback::before { left: -5px; }
   .ticket-fallback::after { right: -5px; }
   .status-dot {
-    @apply size-2.5 shrink-0 rounded-full bg-white/30;
+    @apply size-2.5 shrink-0 rounded-full bg-black/20;
   }
   .status-dot.attended { @apply bg-[#dfff94]; }
   .status-dot.scheduled { @apply bg-[#ff6b61]; }

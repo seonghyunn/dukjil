@@ -103,7 +103,7 @@ export function AddConcertDialog({ open, onOpenChange, onSave }: Props) {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[92vh] overflow-y-auto border-white/10 bg-[#1b1a17] p-0 sm:max-w-xl">
+      <DialogContent className="max-h-[92vh] overflow-y-auto border-black/10 bg-[#fbfaf6] p-0 text-[#1c1b18] sm:max-w-xl">
         <DialogHeader className="px-5 pt-5">
           <DialogTitle className="text-xl">공연 한 편 기록하기</DialogTitle>
           <DialogDescription>자동으로 채워진 정보도 저장 전에 한 번 확인해 주세요.</DialogDescription>
@@ -117,13 +117,13 @@ export function AddConcertDialog({ open, onOpenChange, onSave }: Props) {
             <label className="block text-sm font-medium">예매 페이지 URL
               <Input value={form.sourceUrl} onChange={(e) => update('sourceUrl', e.target.value)} placeholder="https://ticket..." className="mt-2 h-11" />
             </label>
-            <p className="text-xs leading-5 text-white/45">NOL 티켓, YES24 티켓, 멜론티켓을 우선 지원합니다. 불러오지 못해도 입력한 URL은 유지돼요.</p>
+            <p className="text-xs leading-5 text-black/45">NOL 티켓, YES24 티켓, 멜론티켓을 우선 지원합니다. 불러오지 못해도 입력한 URL은 유지돼요.</p>
             <Button className="h-11 w-full bg-[#ff6b61] text-[#17120f] hover:bg-[#ff827a]" onClick={importUrl} disabled={loading || !form.sourceUrl}>{loading ? <LoaderCircle className="animate-spin" /> : <Search />}정보 불러오기</Button>
           </div>
         ) : (
           <form onSubmit={submit} className="space-y-4 px-5 pb-6">
-            {dateCandidates.length > 1 && <CandidateGroup label="공연 회차 후보">{dateCandidates.map((candidate) => <button key={candidate} type="button" onClick={() => update('performanceAt', toDateTimeInput(candidate))} className={`rounded-full border px-3 py-2 text-xs ${form.performanceAt === toDateTimeInput(candidate) ? 'border-[#dfff94] bg-[#dfff94] text-black' : 'border-white/15 text-white/60'}`}>{new Intl.DateTimeFormat('ko-KR', { month: 'long', day: 'numeric', weekday: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Seoul' }).format(new Date(candidate))}</button>)}</CandidateGroup>}
-            {priceCandidates.length > 1 && <CandidateGroup label="가격 후보">{priceCandidates.map((candidate) => <button key={candidate} type="button" onClick={() => update('listPrice', candidate.toString())} className={`rounded-full border px-3 py-2 text-xs ${form.listPrice === candidate.toString() ? 'border-[#dfff94] bg-[#dfff94] text-black' : 'border-white/15 text-white/60'}`}>₩{candidate.toLocaleString('ko-KR')}</button>)}</CandidateGroup>}
+            {dateCandidates.length > 1 && <CandidateGroup label="공연 회차 후보">{dateCandidates.map((candidate) => <button key={candidate} type="button" onClick={() => update('performanceAt', toDateTimeInput(candidate))} className={`rounded-full border px-3 py-2 text-xs ${form.performanceAt === toDateTimeInput(candidate) ? 'border-[#dfff94] bg-[#dfff94] text-black' : 'border-black/15 text-black/60'}`}>{new Intl.DateTimeFormat('ko-KR', { month: 'long', day: 'numeric', weekday: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Seoul' }).format(new Date(candidate))}</button>)}</CandidateGroup>}
+            {priceCandidates.length > 1 && <CandidateGroup label="가격 후보">{priceCandidates.map((candidate) => <button key={candidate} type="button" onClick={() => update('listPrice', candidate.toString())} className={`rounded-full border px-3 py-2 text-xs ${form.listPrice === candidate.toString() ? 'border-[#dfff94] bg-[#dfff94] text-black' : 'border-black/15 text-black/60'}`}>₩{candidate.toLocaleString('ko-KR')}</button>)}</CandidateGroup>}
             <div className="grid gap-4 sm:grid-cols-2">
               <Field label="공연명"><Input value={form.title} onChange={(e) => update('title', e.target.value)} /></Field>
               <Field label="아티스트"><Input value={form.artists} onChange={(e) => update('artists', e.target.value)} placeholder="쉼표로 구분" /></Field>
@@ -134,27 +134,27 @@ export function AddConcertDialog({ open, onOpenChange, onSave }: Props) {
               <Field label="정가"><Input inputMode="numeric" value={form.listPrice} onChange={(e) => update('listPrice', e.target.value.replace(/\D/g, ''))} placeholder="원" /></Field>
               <Field label="실제 결제액"><Input inputMode="numeric" value={form.paidAmount} onChange={(e) => update('paidAmount', e.target.value.replace(/\D/g, ''))} placeholder="원" /></Field>
             </div>
-            {candidates.length > 0 && <div className="space-y-2 rounded-2xl bg-white/5 p-3">{candidates.map((candidate) => <button key={candidate.id} type="button" onClick={() => { setCoords(candidate); update('address', candidate.address); }} className={`flex w-full items-start gap-2 rounded-xl p-2 text-left text-xs ${coords?.id === candidate.id ? 'bg-[#dfff94] text-black' : 'hover:bg-white/5'}`}><MapPin className="mt-0.5 size-4 shrink-0" /><span><b className="block">{candidate.name}</b>{candidate.address}</span></button>)}</div>}
+            {candidates.length > 0 && <div className="space-y-2 rounded-2xl bg-black/5 p-3">{candidates.map((candidate) => <button key={candidate.id} type="button" onClick={() => { setCoords(candidate); update('address', candidate.address); }} className={`flex w-full items-start gap-2 rounded-xl p-2 text-left text-xs ${coords?.id === candidate.id ? 'bg-[#dfff94] text-black' : 'hover:bg-black/5'}`}><MapPin className="mt-0.5 size-4 shrink-0" /><span><b className="block">{candidate.name}</b>{candidate.address}</span></button>)}</div>}
             <Field label="공식 이미지 URL"><Input value={form.posterUrl} onChange={(e) => update('posterUrl', e.target.value)} placeholder="자동 추출 또는 직접 입력" /></Field>
-            <label className="flex cursor-pointer items-center gap-3 rounded-2xl border border-dashed border-white/15 p-4 text-sm text-white/60 hover:border-white/30"><ImagePlus className="size-5" /><span>{imageFile?.name || '이미지가 없으면 직접 추가 (최대 5MB)'}</span><input type="file" accept="image/jpeg,image/png,image/webp" className="sr-only" onChange={(e) => setImageFile(e.target.files?.[0])} /></label>
+            <label className="flex cursor-pointer items-center gap-3 rounded-2xl border border-dashed border-black/15 p-4 text-sm text-black/60 hover:border-black/30"><ImagePlus className="size-5" /><span>{imageFile?.name || '이미지가 없으면 직접 추가 (최대 5MB)'}</span><input type="file" accept="image/jpeg,image/png,image/webp" className="sr-only" onChange={(e) => setImageFile(e.target.files?.[0])} /></label>
             <div className="grid grid-cols-2 gap-2"><Button type="button" variant={status === 'scheduled' ? 'default' : 'outline'} onClick={() => setStatus('scheduled')}>예정</Button><Button type="button" variant={status === 'attended' ? 'default' : 'outline'} onClick={() => setStatus('attended')}>관람 완료</Button></div>
             <Field label="짧은 후기"><Textarea value={form.review} onChange={(e) => update('review', e.target.value)} maxLength={5000} placeholder="그날의 마음을 남겨보세요." className="min-h-24" /></Field>
-            {message && <p role="status" className="rounded-xl bg-white/5 p-3 text-xs leading-5 text-[#dfff94]">{message}</p>}
+            {message && <p role="status" className="rounded-xl bg-black/5 p-3 text-xs leading-5 text-[#5d7b27]">{message}</p>}
             <Button type="submit" className="h-12 w-full bg-[#ff6b61] text-[#17120f] hover:bg-[#ff827a]" disabled={loading}>{loading && <LoaderCircle className="animate-spin" />}공연 저장하기</Button>
           </form>
         )}
-        {mode === 'url' && message && <p role="status" className="mx-5 mb-5 rounded-xl bg-white/5 p-3 text-xs text-[#dfff94]">{message}</p>}
+        {mode === 'url' && message && <p role="status" className="mx-5 mb-5 rounded-xl bg-black/5 p-3 text-xs text-[#5d7b27]">{message}</p>}
       </DialogContent>
     </Dialog>
   );
 }
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return <label className="block text-xs font-medium text-white/60"><span className="mb-2 block">{label}</span>{children}</label>;
+  return <label className="block text-xs font-medium text-black/60"><span className="mb-2 block">{label}</span>{children}</label>;
 }
 
 function CandidateGroup({ label, children }: { label: string; children: React.ReactNode }) {
-  return <fieldset className="rounded-2xl bg-white/5 p-3"><legend className="px-1 text-xs text-white/50">{label}</legend><div className="mt-1 flex flex-wrap gap-2">{children}</div></fieldset>;
+  return <fieldset className="rounded-2xl bg-black/5 p-3"><legend className="px-1 text-xs text-black/50">{label}</legend><div className="mt-1 flex flex-wrap gap-2">{children}</div></fieldset>;
 }
 
 function toDateTimeInput(value: string) {

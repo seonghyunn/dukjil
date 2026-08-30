@@ -98,22 +98,22 @@ export function JourneyMap({ concerts, profile, onProfileChange }: { concerts: C
         <Stat label="예상 왕복" value={formatDistance(totalDistance)} />
         <Stat label="도시 · 국가" value={`${cities} · ${countries}`} />
       </div>
-      <div className="mt-4 grid grid-cols-3 gap-1 rounded-2xl bg-white/[0.05] p-1.5">{([['month', '이번 달'], ['year', '올해'], ['all', '전체']] as const).map(([value, label]) => <button key={value} onClick={() => setPeriod(value)} className={`rounded-xl py-2 text-xs ${period === value ? 'bg-white text-black' : 'text-white/45'}`}>{label}</button>)}</div>
-      {editingOrigin && <div className="mt-4 rounded-3xl border border-white/10 bg-[#211f1b] p-4"><p className="text-xs text-white/50">모든 공연의 왕복 기준점</p><div className="mt-2 flex gap-2"><Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="도시 또는 주소" className="h-10" /><Button onClick={searchOrigin}>찾기</Button></div>{candidates.length > 0 && <div className="mt-3 space-y-1">{candidates.map((candidate) => <button key={candidate.id} onClick={() => chooseOrigin(candidate)} className="flex w-full gap-2 rounded-xl p-2 text-left text-xs hover:bg-white/5"><MapPin className="size-4 shrink-0 text-[#dfff94]" /><span><b className="block">{candidate.name}</b><span className="text-white/45">{candidate.address}</span></span></button>)}</div>}</div>}
+      <div className="mt-4 grid grid-cols-3 gap-1 rounded-2xl bg-black/[0.045] p-1.5">{([['month', '이번 달'], ['year', '올해'], ['all', '전체']] as const).map(([value, label]) => <button key={value} onClick={() => setPeriod(value)} className={`rounded-xl py-2 text-xs ${period === value ? 'bg-white text-black shadow-sm' : 'text-black/45'}`}>{label}</button>)}</div>
+      {editingOrigin && <div className="mt-4 rounded-3xl border border-black/10 bg-white/80 p-4 shadow-sm"><p className="text-xs text-black/50">모든 공연의 왕복 기준점</p><div className="mt-2 flex gap-2"><Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="도시 또는 주소" className="h-10" /><Button onClick={searchOrigin}>찾기</Button></div>{candidates.length > 0 && <div className="mt-3 space-y-1">{candidates.map((candidate) => <button key={candidate.id} onClick={() => chooseOrigin(candidate)} className="flex w-full gap-2 rounded-xl p-2 text-left text-xs hover:bg-black/5"><MapPin className="size-4 shrink-0 text-[#d94d44]" /><span><b className="block">{candidate.name}</b><span className="text-black/45">{candidate.address}</span></span></button>)}</div>}</div>}
       <div className="relative mt-4 h-[430px] overflow-hidden rounded-[30px] border border-white/10 bg-[#151713]">
         <DeckGL initialViewState={{ longitude: 128.5, latitude: 34.8, zoom: trips.some((trip) => trip.countryCode !== 'KR') ? 3.1 : 5.5, pitch: 20, bearing: 0 }} controller layers={layers} getTooltip={({ object }) => object?.title ? { text: `${object.title}\n${object.venue}` } : null}>
           <MapGL mapStyle="https://tiles.openfreemap.org/styles/dark" attributionControl={{ compact: true }} />
         </DeckGL>
         <div className="pointer-events-none absolute left-3 top-3 rounded-full bg-black/65 px-3 py-2 text-[11px] text-white/70 backdrop-blur">출발 · {profile.originName}</div>
-        {playing && current && progress > 0.86 && progress < 1.14 && <div className="absolute inset-x-4 bottom-4 flex items-center gap-3 rounded-2xl bg-black/80 p-3 backdrop-blur"><PosterImage src={current.posterUrl} title={current.title} className="size-12 rounded-xl object-cover" /><div className="min-w-0"><p className="truncate text-sm font-semibold">{current.title}</p><p className="text-xs text-white/45">{current.venue} 도착</p></div></div>}
+        {playing && current && progress > 0.86 && progress < 1.14 && <div className="absolute inset-x-4 bottom-4 flex items-center gap-3 rounded-2xl bg-black/80 p-3 text-white backdrop-blur"><PosterImage src={current.posterUrl} title={current.title} className="size-12 rounded-xl object-cover" /><div className="min-w-0"><p className="truncate text-sm font-semibold">{current.title}</p><p className="text-xs text-white/45">{current.venue} 도착</p></div></div>}
       </div>
       <div className="mt-4 flex items-center justify-center gap-3">
         <Button variant="outline" size="icon-lg" aria-label="처음부터" onClick={restart}><RotateCcw /></Button>
         <Button className="h-11 min-w-32 rounded-full bg-[#ff6b61] text-black hover:bg-[#ff827a]" disabled={!trips.length || reducedMotion} onClick={() => setPlaying((value) => !value)}>{playing ? <><Pause />일시정지</> : <><Play />재생하기</>}</Button>
       </div>
-      {reducedMotion && <p className="mt-3 text-center text-xs text-white/45">동작 줄이기 설정에 따라 전체 원정 경로를 표시하고 있어요.</p>}
+      {reducedMotion && <p className="mt-3 text-center text-xs text-black/45">동작 줄이기 설정에 따라 전체 원정 경로를 표시하고 있어요.</p>}
     </section>
   );
 }
 
-function Stat({ label, value }: { label: string; value: string }) { return <div className="rounded-2xl bg-white/[0.055] p-3"><p className="text-[10px] text-white/40">{label}</p><p className="mt-1 truncate text-sm font-semibold">{value}</p></div>; }
+function Stat({ label, value }: { label: string; value: string }) { return <div className="rounded-2xl border border-black/10 bg-white/75 p-3 shadow-sm"><p className="text-[10px] text-black/40">{label}</p><p className="mt-1 truncate text-sm font-semibold">{value}</p></div>; }
