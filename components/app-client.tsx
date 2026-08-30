@@ -279,15 +279,16 @@ function ConcertDetail({ concert, concerts, onOpenChange, onSave, onAddReview, o
   const [saving, setSaving] = useState(false);
   const [urlImporting, setUrlImporting] = useState(false);
   const [urlMessage, setUrlMessage] = useState('');
+  const [urlDateCandidates, setUrlDateCandidates] = useState<string[]>([]);
   const [deleteConfirm, setDeleteConfirm] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  useEffect(() => { setDraft(concert); setImageFile(undefined); setUrlMessage(''); setDeleteConfirm(false); }, [concert]);
+  useEffect(() => { setDraft(concert); setImageFile(undefined); setUrlMessage(''); setUrlDateCandidates([]); setDeleteConfirm(false); }, [concert]);
   if (!concert || !draft) return null;
   const artistSuggestions = [...new Set(concerts.flatMap((item) => item.artists))].slice(0, 10);
   const venueSuggestions = [...new globalThis.Map(concerts.filter((item) => item.venue).map((item) => [item.venue, item])).values()].slice(0, 8);
   const providerSuggestions = [...new Set(concerts.map((item) => item.bookingProvider).filter(Boolean))].slice(0, 8);
   const update = <K extends keyof Concert>(key: K, value: Concert[K]) => setDraft((current) => current ? { ...current, [key]: value } : current);
-  async function saveDetails() { setSaving(true); try { await onSave(draft!, imageFile); setImageFile(undefined); } finally { setSaving(false); } }
+  async function saveDetails() { if (urlDateCandidates.length > 1 && !urlDateCandidates.includes(draft!.performanceAt)) { setUrlMessage('불러온 공연일 중 하나를 선택해 주세요.'); return; } setSaving(true); try { await onSave(draft!, imageFile); setImageFile(undefined); setUrlDateCandidates([]); } finally { setSaving(false); } }
   async function postComment() { if (!comment.trim()) return; await onAddReview(concert!, comment); setComment(''); }
   async function confirmDelete() { setDeleting(true); try { await onDelete(concert!); } finally { setDeleting(false); } }
   async function importBookingUrl() {
@@ -297,11 +298,13 @@ function ConcertDetail({ concert, concerts, onOpenChange, onSave, onAddReview, o
       const response = await fetch('/api/import-concert', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ url: draft.sourceUrl.trim() }) });
       const data = await response.json() as ImportDraft & { error?: string };
       if (!response.ok) throw new Error(data.error || '예매 페이지 정보를 불러오지 못했어요.');
+      const importedDates = data.dateCandidates || [];
+      setUrlDateCandidates(importedDates.length > 1 ? importedDates : []);
       setDraft((current) => current ? {
         ...current,
         title: data.title || current.title,
         artists: data.artists?.length ? data.artists : current.artists,
-        performanceAt: data.dateCandidates?.[0] || current.performanceAt,
+        performanceAt: importedDates.length === 1 ? importedDates[0] : current.performanceAt,
         venue: data.venue || current.venue,
         address: data.address || current.address,
         latitude: data.venue || data.address ? null : current.latitude,
@@ -311,7 +314,7 @@ function ConcertDetail({ concert, concerts, onOpenChange, onSave, onAddReview, o
         officialPosterUrl: data.posterUrl || current.officialPosterUrl,
         posterUrl: current.posterSource === 'official' && data.posterUrl ? data.posterUrl : current.posterUrl,
       } : current);
-      setUrlMessage(`정보를 덮어썼어요. ${data.dateCandidates?.length > 1 ? `날짜 후보 ${data.dateCandidates.length}개 중 첫 날짜를 적용했어요. ` : ''}아래 내용을 확인한 뒤 ‘상세 정보 저장’을 눌러 주세요.`);
+      setUrlMessage(importedDates.length > 1 ? `정보를 불러왔어요. 공연일 후보 ${importedDates.length}개 중 관람한 날짜를 선택해 주세요.` : '정보를 덮어썼어요. 아래 내용을 확인한 뒤 ‘상세 정보 저장’을 눌러 주세요.');
     } catch (error) { setUrlMessage(error instanceof Error ? error.message : '예매 페이지 정보를 불러오지 못했어요.'); }
     finally { setUrlImporting(false); }
   }
@@ -324,15 +327,16 @@ function ConcertDetail({ concert, concerts, onOpenChange, onSave, onAddReview, o
       <div className="grid gap-3 sm:grid-cols-2">
         <DetailField label="공연명"><Input value={draft.title} onChange={(event) => update('title', event.target.value)} /></DetailField>
         <DetailField label="아티스트"><div className="space-y-2"><Input value={draft.artists.join(', ')} onChange={(event) => update('artists', event.target.value.split(',').map((value) => value.trim()).filter(Boolean))} placeholder="쉼표로 구분" />{artistSuggestions.length > 0 && <QuickChoices label="기존 기록에서 선택">{artistSuggestions.map((artist) => { const selected = draft.artists.includes(artist); return <button key={artist} type="button" data-selected={selected} className="suggestion-chip" onClick={() => update('artists', selected ? draft.artists.filter((value) => value !== artist) : [...draft.artists, artist])}>{artist}</button>; })}</QuickChoices>}</div></DetailField>
-        <DetailField label="공연 일시"><Input type="datetime-local" value={toDateTimeInput(draft.performanceAt)} onChange={(event) => update('performanceAt', new Date(event.target.value).toISOString())} /></DetailField>
+        <DetailField label="공연 일시"><Input type="datetime-local" value={toDateTimeInput(draft.performanceAt)} onChange={(event) => { update('performanceAt', new Date(event.target.value).toISOString()); setUrlDateCandidates([]); }} /></DetailField>
         <DetailField label="예매처"><div className="space-y-2"><Input value={draft.bookingProvider} onChange={(event) => update('bookingProvider', event.target.value)} />{providerSuggestions.length > 0 && <QuickChoices label="기존 기록에서 선택">{providerSuggestions.map((provider) => <button key={provider} type="button" data-selected={draft.bookingProvider === provider} className="suggestion-chip" onClick={() => update('bookingProvider', provider)}>{provider}</button>)}</QuickChoices>}</div></DetailField>
         <DetailField label="공연장"><div className="space-y-2"><Input value={draft.venue} onChange={(event) => update('venue', event.target.value)} />{venueSuggestions.length > 0 && <QuickChoices label="기존 기록에서 선택">{venueSuggestions.map((item) => <button key={item.venue} type="button" data-selected={draft.venue === item.venue} className="suggestion-chip" onClick={() => setDraft((current) => current ? { ...current, venue: item.venue, address: item.address, latitude: item.latitude, longitude: item.longitude, countryCode: item.countryCode } : current)}>{item.venue}</button>)}</QuickChoices>}</div></DetailField>
         <DetailField label="주소"><Input value={draft.address} onChange={(event) => update('address', event.target.value)} /></DetailField>
         <DetailField label="정가"><Input inputMode="numeric" value={draft.listPrice ?? ''} onChange={(event) => update('listPrice', event.target.value ? Number(event.target.value.replace(/\D/g, '')) : null)} /></DetailField>
         <DetailField label="실제 결제액"><Input inputMode="numeric" value={draft.paidAmount ?? ''} onChange={(event) => update('paidAmount', event.target.value ? Number(event.target.value.replace(/\D/g, '')) : null)} /></DetailField>
-        <DetailField label="예매 페이지 URL"><div className="space-y-2"><Input type="url" value={draft.sourceUrl} onChange={(event) => { update('sourceUrl', event.target.value); setUrlMessage(''); }} placeholder="https://ticket..." /><Button type="button" variant="outline" onClick={importBookingUrl} disabled={urlImporting || !draft.sourceUrl.trim()} className="w-full"><Link2 />{urlImporting ? '불러오는 중…' : 'URL 정보로 덮어쓰기'}{urlImporting && <LoaderCircle className="animate-spin" />}</Button></div></DetailField>
+        <DetailField label="예매 페이지 URL"><div className="space-y-2"><Input type="url" value={draft.sourceUrl} onChange={(event) => { update('sourceUrl', event.target.value); setUrlMessage(''); setUrlDateCandidates([]); }} placeholder="https://ticket..." /><Button type="button" variant="outline" onClick={importBookingUrl} disabled={urlImporting || !draft.sourceUrl.trim()} className="w-full"><Link2 />{urlImporting ? '불러오는 중…' : 'URL 정보로 덮어쓰기'}{urlImporting && <LoaderCircle className="animate-spin" />}</Button></div></DetailField>
       </div>
       {urlMessage && <output className="block rounded-xl bg-[#f0eee7] p-3 text-xs leading-5 text-[#5d7b27]">{urlMessage}</output>}
+      {urlDateCandidates.length > 1 && <fieldset className="rounded-2xl border border-[#d8e9b7] bg-[#f4f9e9] p-3"><legend className="px-1 text-xs font-semibold text-[#4f6727]">관람한 공연일 선택</legend><div className="mt-1 flex flex-wrap gap-2">{urlDateCandidates.map((candidate) => { const selected = draft.performanceAt === candidate; return <button key={candidate} type="button" aria-pressed={selected} onClick={() => update('performanceAt', candidate)} className={`rounded-full border px-3 py-2 text-xs transition ${selected ? 'border-[#1f1d19] bg-[#1f1d19] text-[#dfff94]' : 'border-black/15 bg-white text-black/60 hover:border-black/30'}`}>{selected ? '✓ ' : ''}{dateLabel(candidate)}</button>; })}</div><p className="mt-2 text-[11px] text-black/40">선택한 날짜만 현재 공연 기록에 적용돼요.</p></fieldset>}
       <div><p className="mb-2 text-xs font-medium text-black/50">공연 별점</p><RatingPicker value={draft.rating} onChange={(value) => update('rating', value)} /><p className="mt-2 text-[11px] text-black/35">공연 전체에 하나만 저장되며 언제든 수정할 수 있어요.</p></div>
       <div className="grid grid-cols-2 gap-2"><Button variant={draft.status === 'scheduled' ? 'default' : 'outline'} onClick={() => update('status', 'scheduled')}>예정</Button><Button variant={draft.status === 'attended' ? 'default' : 'outline'} onClick={() => update('status', 'attended')}>관람 완료</Button></div>
       <Button className="h-11 w-full bg-[#1f1d19] text-white hover:bg-black" onClick={saveDetails} disabled={saving}>{saving ? '저장 중…' : '상세 정보 저장'}</Button>
