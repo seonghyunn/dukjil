@@ -52,6 +52,10 @@
   .suggestion-chip {
     @apply max-w-full truncate rounded-full border border-black/10 bg-white px-3 py-1.5 text-xs text-black/60 transition hover:border-black/20 hover:text-black;
   }
+
+  .suggestion-chip[data-selected='true'] {
+    @apply border-[#b9df75] bg-[#dfff94] text-black;
+  }
 }
 
 body {

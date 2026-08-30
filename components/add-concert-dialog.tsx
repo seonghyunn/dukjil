@@ -38,6 +38,7 @@ export function AddConcertDialog({ open, onOpenChange, onSave, concerts }: Props
   const artistSuggestions = [...new Set(concerts.flatMap((concert) => concert.artists))].sort((a, b) => a.localeCompare(b, 'ko')).slice(0, 10);
   const venueSuggestions = [...new Map(concerts.filter((concert) => concert.venue).map((concert) => [concert.venue, concert])).values()].slice(0, 8);
   const providerSuggestions = [...new Set(concerts.map((concert) => concert.bookingProvider).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'ko')).slice(0, 8);
+  const selectedArtists = form.artists.split(',').map((value) => value.trim()).filter(Boolean);
 
   useEffect(() => {
     if (!open) {
@@ -149,19 +150,14 @@ export function AddConcertDialog({ open, onOpenChange, onSave, concerts }: Props
             {priceCandidates.length > 1 && <CandidateGroup label="가격 후보">{priceCandidates.map((candidate) => <button key={candidate} type="button" onClick={() => update('listPrice', candidate.toString())} className={`rounded-full border px-3 py-2 text-xs ${form.listPrice === candidate.toString() ? 'border-[#dfff94] bg-[#dfff94] text-black' : 'border-black/15 text-black/60'}`}>₩{candidate.toLocaleString('ko-KR')}</button>)}</CandidateGroup>}
             <div className="grid gap-4 sm:grid-cols-2">
               <Field label="공연명"><Input value={form.title} onChange={(e) => update('title', e.target.value)} /></Field>
-              <Field label="아티스트"><Input value={form.artists} onChange={(e) => update('artists', e.target.value)} placeholder="쉼표로 구분" /></Field>
+              <Field label="아티스트"><div className="space-y-2"><Input value={form.artists} onChange={(e) => update('artists', e.target.value)} placeholder="쉼표로 구분" />{artistSuggestions.length > 0 && <SuggestionRow label="기존 기록에서 선택">{artistSuggestions.map((artist) => { const selected = selectedArtists.includes(artist); return <button key={artist} type="button" data-selected={selected} onClick={() => update('artists', (selected ? selectedArtists.filter((value) => value !== artist) : [...selectedArtists, artist]).join(', '))} className="suggestion-chip">{artist}</button>; })}</SuggestionRow>}</div></Field>
               <Field label={selectedDates.length > 1 ? '대표 공연 일시' : '공연 일시'}><Input type="datetime-local" value={form.performanceAt} onChange={(e) => { update('performanceAt', e.target.value); setSelectedDates([]); }} /></Field>
-              <Field label="예매처"><Input value={form.bookingProvider} onChange={(e) => update('bookingProvider', e.target.value)} /></Field>
-              <Field label="공연장"><Input value={form.venue} onChange={(e) => update('venue', e.target.value)} /></Field>
+              <Field label="예매처"><div className="space-y-2"><Input value={form.bookingProvider} onChange={(e) => update('bookingProvider', e.target.value)} />{providerSuggestions.length > 0 && <SuggestionRow label="기존 기록에서 선택">{providerSuggestions.map((provider) => <button key={provider} type="button" data-selected={form.bookingProvider === provider} onClick={() => update('bookingProvider', provider)} className="suggestion-chip">{provider}</button>)}</SuggestionRow>}</div></Field>
+              <Field label="공연장"><div className="space-y-2"><Input value={form.venue} onChange={(e) => { update('venue', e.target.value); setCoords(null); }} />{venueSuggestions.length > 0 && <SuggestionRow label="기존 기록에서 선택">{venueSuggestions.map((concert) => <button key={concert.venue} type="button" data-selected={form.venue === concert.venue} onClick={() => { update('venue', concert.venue); update('address', concert.address); setCoords(concert.latitude == null || concert.longitude == null ? null : { id: `saved-${concert.id}`, name: concert.venue, address: concert.address, latitude: concert.latitude, longitude: concert.longitude, countryCode: concert.countryCode }); }} className="suggestion-chip">{concert.venue}</button>)}</SuggestionRow>}</div></Field>
               <Field label="주소"><div className="flex gap-2"><Input value={form.address} onChange={(e) => update('address', e.target.value)} /><Button type="button" variant="outline" size="icon-lg" aria-label="위치 찾기" onClick={findVenue}><MapPin /></Button></div></Field>
               <Field label="정가"><Input inputMode="numeric" value={form.listPrice} onChange={(e) => update('listPrice', e.target.value.replace(/\D/g, ''))} placeholder="원" /></Field>
               <Field label="실제 결제액"><Input inputMode="numeric" value={form.paidAmount} onChange={(e) => update('paidAmount', e.target.value.replace(/\D/g, ''))} placeholder="원" /></Field>
             </div>
-            {(artistSuggestions.length > 0 || venueSuggestions.length > 0 || providerSuggestions.length > 0) && <div className="space-y-3 rounded-2xl bg-black/[0.035] p-3">
-              {artistSuggestions.length > 0 && <SuggestionRow label="기록한 아티스트">{artistSuggestions.map((artist) => <button key={artist} type="button" onClick={() => { const current = form.artists.split(',').map((value) => value.trim()).filter(Boolean); if (!current.includes(artist)) update('artists', [...current, artist].join(', ')); }} className="suggestion-chip">{artist}</button>)}</SuggestionRow>}
-              {venueSuggestions.length > 0 && <SuggestionRow label="기록한 공연장">{venueSuggestions.map((concert) => <button key={concert.venue} type="button" onClick={() => { update('venue', concert.venue); update('address', concert.address); setCoords(concert.latitude == null || concert.longitude == null ? null : { id: `saved-${concert.id}`, name: concert.venue, address: concert.address, latitude: concert.latitude, longitude: concert.longitude, countryCode: concert.countryCode }); }} className="suggestion-chip">{concert.venue}</button>)}</SuggestionRow>}
-              {providerSuggestions.length > 0 && <SuggestionRow label="기록한 예매처">{providerSuggestions.map((provider) => <button key={provider} type="button" onClick={() => update('bookingProvider', provider)} className="suggestion-chip">{provider}</button>)}</SuggestionRow>}
-            </div>}
             {candidates.length > 0 && <div className="space-y-2 rounded-2xl bg-black/5 p-3">{candidates.map((candidate) => <button key={candidate.id} type="button" onClick={() => { setCoords(candidate); update('address', candidate.address); }} className={`flex w-full items-start gap-2 rounded-xl p-2 text-left text-xs ${coords?.id === candidate.id ? 'bg-[#dfff94] text-black' : 'hover:bg-black/5'}`}><MapPin className="mt-0.5 size-4 shrink-0" /><span><b className="block">{candidate.name}</b>{candidate.address}</span></button>)}</div>}
             <Field label="공식 이미지 URL"><Input value={form.posterUrl} onChange={(e) => update('posterUrl', e.target.value)} placeholder="자동 추출 또는 직접 입력" /></Field>
             <label className="flex cursor-pointer items-center gap-3 rounded-2xl border border-dashed border-black/15 p-4 text-sm text-black/60 hover:border-black/30"><ImagePlus className="size-5" /><span>{imageFile?.name || '이미지가 없으면 직접 추가 (최대 5MB)'}</span><input type="file" accept="image/jpeg,image/png,image/webp" className="sr-only" onChange={(e) => setImageFile(e.target.files?.[0])} /></label>
@@ -178,7 +174,7 @@ export function AddConcertDialog({ open, onOpenChange, onSave, concerts }: Props
 }
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return <label className="block text-xs font-medium text-black/60"><span className="mb-2 block">{label}</span>{children}</label>;
+  return <div role="group" aria-label={label} className="block text-xs font-medium text-black/60"><span className="mb-2 block">{label}</span>{children}</div>;
 }
 
 function CandidateGroup({ label, children }: { label: string; children: React.ReactNode }) {
