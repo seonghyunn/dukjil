@@ -193,7 +193,7 @@ export function AppClient() {
         {view === 'now' && <NowView concerts={concerts} year={statsYear} onYearChange={setStatsYear} onSelect={setSelected} onBulkEdit={() => setBulkEditOpen(true)} />}
         {view === 'calendar' && <CalendarView concerts={concerts} onSelect={setSelected} />}
         {view === 'map' && <JourneyMap concerts={concerts} profile={profile} onProfileChange={saveProfile} />}
-        <button aria-label="공연 추가" onClick={() => setAddOpen(true)} className="fixed bottom-[90px] right-5 z-20 grid size-12 place-items-center rounded-full bg-[#ff6b61] text-black shadow-xl shadow-black/40 sm:right-[max(24px,calc((100vw-1152px)/2))]"><Plus /></button>
+        <button aria-label="공연 추가" onClick={() => setAddOpen(true)} className="fixed bottom-[124px] right-5 z-20 grid size-12 place-items-center rounded-full bg-[#ff6b61] text-black shadow-xl shadow-black/40 sm:right-[max(24px,calc((100vw-1152px)/2))]"><Plus /></button>
         <nav aria-label="주요 메뉴" className="fixed inset-x-0 bottom-4 z-20 mx-auto flex w-[calc(100%-32px)] max-w-[430px] items-center justify-around rounded-[24px] border border-black/10 bg-[#fffdf8e8] p-2 shadow-[0_16px_45px_rgba(46,35,20,.18)] backdrop-blur-xl">
           <NavButton active={view === 'now'} onClick={() => setView('now')} icon={<WalletCards />} label="지금" />
           <NavButton active={view === 'calendar'} onClick={() => setView('calendar')} icon={<CalendarDays />} label="캘린더" />
@@ -280,6 +280,7 @@ function ConcertDetail({ concert, concerts, onOpenChange, onSave, onAddReview, o
   const [urlImporting, setUrlImporting] = useState(false);
   const [urlMessage, setUrlMessage] = useState('');
   const [deleteConfirm, setDeleteConfirm] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   useEffect(() => { setDraft(concert); setImageFile(undefined); setUrlMessage(''); setDeleteConfirm(false); }, [concert]);
   if (!concert || !draft) return null;
   const artistSuggestions = [...new Set(concerts.flatMap((item) => item.artists))].slice(0, 10);
@@ -288,6 +289,7 @@ function ConcertDetail({ concert, concerts, onOpenChange, onSave, onAddReview, o
   const update = <K extends keyof Concert>(key: K, value: Concert[K]) => setDraft((current) => current ? { ...current, [key]: value } : current);
   async function saveDetails() { setSaving(true); try { await onSave(draft!, imageFile); setImageFile(undefined); } finally { setSaving(false); } }
   async function postComment() { if (!comment.trim()) return; await onAddReview(concert!, comment); setComment(''); }
+  async function confirmDelete() { setDeleting(true); try { await onDelete(concert!); } finally { setDeleting(false); } }
   async function importBookingUrl() {
     if (!draft?.sourceUrl.trim()) { setUrlMessage('예매 페이지 URL을 입력해 주세요.'); return; }
     setUrlImporting(true); setUrlMessage('');
@@ -313,7 +315,7 @@ function ConcertDetail({ concert, concerts, onOpenChange, onSave, onAddReview, o
     } catch (error) { setUrlMessage(error instanceof Error ? error.message : '예매 페이지 정보를 불러오지 못했어요.'); }
     finally { setUrlImporting(false); }
   }
-  return <Dialog open onOpenChange={onOpenChange}><DialogContent showCloseButton={false} className="max-h-[92vh] w-[calc(100vw-24px)] max-w-xl overflow-x-hidden overflow-y-auto border-black/10 bg-[#fbfaf6] p-0 text-[#1c1b18]">
+  return <><Dialog open onOpenChange={onOpenChange}><DialogContent showCloseButton={false} className="max-h-[92vh] w-[calc(100vw-24px)] max-w-xl overflow-x-hidden overflow-y-auto border-black/10 bg-[#fbfaf6] p-0 text-[#1c1b18]">
     <div className="pointer-events-none sticky top-0 z-40 flex h-0 justify-end pr-3 pt-3"><button type="button" aria-label="공연 상세 닫기" onClick={() => onOpenChange(false)} className="pointer-events-auto grid size-9 place-items-center rounded-full border border-black/10 bg-[#fffdf8]/95 text-black/55 shadow-md backdrop-blur hover:text-black"><X className="size-4" /></button></div>
     <div className="relative h-44"><PosterImage src={draft.posterUrl} title={draft.title} className="h-full w-full object-cover" /><span className="absolute inset-0 bg-gradient-to-t from-[#fbfaf6] to-transparent" /><span className="absolute bottom-3 right-4 rounded-full bg-black/65 px-3 py-1.5 text-[11px] text-white backdrop-blur">{draft.posterSource === 'upload' ? '직접 업로드 사진' : '공식 이미지'}</span></div>
     <div className="space-y-5 px-5 pb-6">
@@ -339,9 +341,10 @@ function ConcertDetail({ concert, concerts, onOpenChange, onSave, onAddReview, o
         <div className="mt-3 min-w-0 space-y-2">{concert.reviews.length ? concert.reviews.map((review) => <article key={review.id} className="group min-w-0 rounded-2xl bg-[#f1eee6] p-3"><div className="flex items-start justify-between gap-3"><p className="break-words whitespace-pre-wrap text-sm leading-6 text-black/75 [overflow-wrap:anywhere]">{review.body}</p><button aria-label="후기 삭제" onClick={() => onDeleteReview(concert, review.id)} className="shrink-0 rounded-full p-1 text-black/20 hover:bg-white hover:text-red-500"><Trash2 className="size-3.5" /></button></div><time className="mt-2 block text-[10px] text-black/30">{new Intl.DateTimeFormat('ko-KR', { month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' }).format(new Date(review.createdAt))}</time></article>) : <p className="rounded-2xl border border-dashed border-black/10 p-5 text-center text-xs text-black/35">첫 댓글을 남겨보세요.</p>}</div>
         <div className="mt-3 flex items-end gap-2"><Textarea value={comment} onChange={(event) => setComment(event.target.value)} maxLength={2000} className="min-h-20 resize-none" placeholder="별점과 별개로 댓글을 여러 개 남길 수 있어요." /><Button size="icon-lg" aria-label="후기 등록" className="shrink-0 bg-[#ff6b61] text-black hover:bg-[#ff827a]" onClick={postComment} disabled={!comment.trim()}><Send /></Button></div>
       </section>
-      {deleteConfirm ? <div className="rounded-2xl border border-red-200 bg-red-50 p-4"><p className="text-sm font-semibold text-red-700">이 공연 기록을 정말 삭제할까요?</p><p className="mt-1 text-xs leading-5 text-red-600/70">공연 정보와 후기까지 함께 삭제되며 되돌릴 수 없어요.</p><div className="mt-3 grid grid-cols-2 gap-2"><Button type="button" variant="outline" onClick={() => setDeleteConfirm(false)}>취소</Button><Button type="button" onClick={() => onDelete(concert)} className="bg-red-600 text-white hover:bg-red-700"><Trash2 />삭제하기</Button></div></div> : <button type="button" onClick={() => setDeleteConfirm(true)} className="w-full py-1 text-xs text-red-500/65 hover:text-red-600">이 기록 삭제</button>}
+      <button type="button" onClick={() => setDeleteConfirm(true)} className="w-full py-1 text-xs text-red-500/65 hover:text-red-600">이 기록 삭제</button>
     </div>
-  </DialogContent></Dialog>;
+  </DialogContent></Dialog>
+  <Dialog open={deleteConfirm} onOpenChange={(open) => { if (!deleting) setDeleteConfirm(open); }}><DialogContent className="w-[calc(100vw-32px)] max-w-sm border-red-100 bg-[#fffdf8] text-[#1c1b18]"><DialogHeader><DialogTitle>이 공연 기록을 삭제할까요?</DialogTitle><DialogDescription>공연 정보와 후기까지 함께 삭제되며 되돌릴 수 없어요.</DialogDescription></DialogHeader><div className="grid grid-cols-2 gap-2 pt-2"><Button type="button" variant="outline" onClick={() => setDeleteConfirm(false)} disabled={deleting}>취소</Button><Button type="button" onClick={confirmDelete} disabled={deleting} className="bg-red-600 text-white hover:bg-red-700"><Trash2 />{deleting ? '삭제 중…' : '삭제하기'}</Button></div></DialogContent></Dialog></>;
 }
 
 function DetailField({ label, children }: { label: string; children: React.ReactNode }) { return <div role="group" aria-label={label} className="block min-w-0 text-xs font-medium text-black/50"><span className="mb-1.5 block">{label}</span>{children}</div>; }

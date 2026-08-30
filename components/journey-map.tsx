@@ -15,6 +15,7 @@ import 'maplibre-gl/dist/maplibre-gl.css';
 
 type Period = 'month' | 'year' | 'all';
 const MAP_STYLE = 'https://tiles.openfreemap.org/styles/liberty';
+const KOREA_VIEW = { longitude: 127.8, latitude: 36.25, zoom: 6.05, pitch: 20, bearing: 0 };
 
 export function JourneyMap({ concerts, profile, onProfileChange }: { concerts: Concert[]; profile: Profile; onProfileChange: (profile: Profile) => Promise<void> }) {
   const [period, setPeriod] = useState<Period>('all');
@@ -22,6 +23,7 @@ export function JourneyMap({ concerts, profile, onProfileChange }: { concerts: C
   const [tripIndex, setTripIndex] = useState(0);
   const [progress, setProgress] = useState(0);
   const [speed, setSpeed] = useState(1);
+  const [viewState, setViewState] = useState(KOREA_VIEW);
   const [editingOrigin, setEditingOrigin] = useState(!profile.originConfigured);
   const [query, setQuery] = useState(profile.originAddress);
   const [candidates, setCandidates] = useState<GeocodeCandidate[]>([]);
@@ -42,7 +44,7 @@ export function JourneyMap({ concerts, profile, onProfileChange }: { concerts: C
     return true;
   }).sort((a, b) => a.performanceAt.localeCompare(b.performanceAt)), [concerts, period, referenceDate]);
 
-  const origin: [number, number] = [profile.originLongitude, profile.originLatitude];
+  const origin = useMemo<[number, number]>(() => [profile.originLongitude, profile.originLatitude], [profile.originLongitude, profile.originLatitude]);
   const totalDistance = trips.reduce((sum, trip) => sum + greatCircleDistanceKm(origin, [trip.longitude!, trip.latitude!]) * 2, 0);
   const cities = new Set(trips.map((trip) => `${trip.countryCode}:${trip.venue}`)).size;
   const countries = new Set(trips.map((trip) => trip.countryCode)).size;
@@ -68,20 +70,34 @@ export function JourneyMap({ concerts, profile, onProfileChange }: { concerts: C
     return () => { if (animation.current) cancelAnimationFrame(animation.current); animation.current = null; last.current = 0; };
   }, [playing, tripIndex, trips.length, reducedMotion, speed]);
 
-  useEffect(() => { setPlaying(false); setTripIndex(0); setProgress(0); }, [period]);
+  useEffect(() => { setPlaying(false); setTripIndex(0); setProgress(0); setViewState(KOREA_VIEW); }, [period]);
 
   const fraction = progress <= 1 ? progress : 2 - progress;
   const destination: [number, number] | null = current ? [current.longitude!, current.latitude!] : null;
   const marker = destination ? interpolateGreatCircle(origin, destination, Math.max(0, Math.min(1, fraction))) : origin;
-  const visibleTrips = reducedMotion || (!playing && progress >= 2) ? trips : trips.slice(0, Math.min(trips.length, tripIndex + 1));
+  const completedCount = reducedMotion ? trips.length : Math.min(trips.length, tripIndex + (progress >= 2 ? 1 : 0));
+  const visibleTrips = trips.slice(0, completedCount);
+
+  useEffect(() => {
+    if (reducedMotion || !playing || !current || !destination) return;
+    if (current.countryCode === 'KR') { setViewState(KOREA_VIEW); return; }
+    const travel = Math.max(0, Math.min(1, fraction));
+    const position = interpolateGreatCircle(origin, destination, travel);
+    setViewState({ ...KOREA_VIEW, longitude: position[0], latitude: position[1], zoom: KOREA_VIEW.zoom - Math.sin(Math.PI * travel) * 3.15 });
+  }, [current, destination, fraction, origin, playing, reducedMotion]);
+
+  useEffect(() => {
+    if (!playing && progress >= 2) setViewState(KOREA_VIEW);
+  }, [playing, progress]);
+
   const layers = [
     new GreatCircleLayer({ id: 'journey-arcs', data: visibleTrips, getSourcePosition: () => origin, getTargetPosition: (d: Concert) => [d.longitude!, d.latitude!], getSourceColor: [223, 255, 148, 175], getTargetColor: [255, 107, 97, 220], getWidth: 3, greatCircle: true, pickable: true }),
-    new ScatterplotLayer({ id: 'venues', data: trips, getPosition: (d: Concert) => [d.longitude!, d.latitude!], getRadius: 13000, radiusMinPixels: 4, radiusMaxPixels: 9, getFillColor: [255, 107, 97, 235], stroked: true, getLineColor: [255, 255, 255, 220], lineWidthMinPixels: 1, pickable: true }),
+    new ScatterplotLayer({ id: 'venues', data: visibleTrips, getPosition: (d: Concert) => [d.longitude!, d.latitude!], getRadius: 13000, radiusMinPixels: 4, radiusMaxPixels: 9, getFillColor: [255, 107, 97, 235], stroked: true, getLineColor: [255, 255, 255, 220], lineWidthMinPixels: 1, pickable: true }),
     new ScatterplotLayer({ id: 'origin', data: [{ position: origin }], getPosition: (d: { position: [number, number] }) => d.position, getRadius: 15000, radiusMinPixels: 5, radiusMaxPixels: 10, getFillColor: [223, 255, 148, 255], stroked: true, getLineColor: [20, 20, 18, 255], lineWidthMinPixels: 2 }),
-    ...(playing && !reducedMotion ? [new ScatterplotLayer({ id: 'traveler', data: [{ position: marker }], getPosition: (d: { position: [number, number] }) => d.position, getRadius: 22000, radiusMinPixels: 7, radiusMaxPixels: 12, getFillColor: [255, 255, 255, 255], stroked: true, getLineColor: [255, 107, 97, 255], lineWidthMinPixels: 3 })] : []),
+    ...(!reducedMotion && progress > 0 && progress < 2 ? [new ScatterplotLayer({ id: 'traveler', data: [{ position: marker }], getPosition: (d: { position: [number, number] }) => d.position, getRadius: 22000, radiusMinPixels: 7, radiusMaxPixels: 12, getFillColor: [255, 255, 255, 255], stroked: true, getLineColor: [255, 107, 97, 255], lineWidthMinPixels: 3 })] : []),
   ];
 
-  function restart() { setTripIndex(0); setProgress(0); setPlaying(!reducedMotion); }
+  function restart() { setTripIndex(0); setProgress(0); setViewState(KOREA_VIEW); setPlaying(!reducedMotion); }
 
   async function searchOrigin() {
     if (!query.trim()) return;
@@ -114,18 +130,18 @@ export function JourneyMap({ concerts, profile, onProfileChange }: { concerts: C
       </div>
       <div className="mt-4 grid grid-cols-3 gap-1 rounded-2xl bg-black/[0.045] p-1.5">{([['month', '이번 달'], ['year', '올해'], ['all', '전체']] as const).map(([value, label]) => <button key={value} onClick={() => setPeriod(value)} className={`rounded-xl py-2 text-xs ${period === value ? 'bg-white text-black shadow-sm' : 'text-black/45'}`}>{label}</button>)}</div>
       {editingOrigin && <div className="mt-4 rounded-3xl border border-black/10 bg-white/80 p-4 shadow-sm"><p className="text-xs text-black/50">모든 공연의 왕복 기준점</p><div className="mt-2 flex gap-2"><Input value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') void searchOrigin(); }} placeholder="도시 또는 주소" className="h-10" /><Button onClick={searchOrigin} disabled={!query.trim() || searching}>{searching ? '검색 중' : '찾기'}</Button></div><p className="mt-2 text-[10px] text-black/35">검색 데이터 © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer" className="underline">OpenStreetMap 기여자</a></p>{searchMessage && <p role="status" className="mt-3 text-xs text-[#a5413a]">{searchMessage}</p>}{candidates.length > 0 && <div className="mt-3 space-y-1">{candidates.map((candidate) => <button key={candidate.id} onClick={() => chooseOrigin(candidate)} className="flex w-full gap-2 rounded-xl p-2 text-left text-xs hover:bg-black/5"><MapPin className="size-4 shrink-0 text-[#d94d44]" /><span><b className="block">{candidate.name}</b><span className="text-black/45">{candidate.address}</span></span></button>)}</div>}</div>}
-      <div className="relative mt-4 h-[430px] overflow-hidden rounded-[30px] border border-black/10 bg-[#e6ece7] shadow-[0_18px_50px_rgba(75,66,47,.14)]">
-        <DeckGL style={{ position: 'absolute', inset: '0px' }} initialViewState={{ longitude: 128.5, latitude: 34.8, zoom: trips.some((trip) => trip.countryCode !== 'KR') ? 3.1 : 5.5, pitch: 20, bearing: 0 }} controller layers={layers} getTooltip={({ object }) => object?.title ? { text: `${object.title}\n${object.venue}` } : null}>
+      <div className="relative mt-4 h-[520px] overflow-hidden rounded-[30px] border border-black/10 bg-[#e6ece7] shadow-[0_18px_50px_rgba(75,66,47,.14)] sm:h-[600px]">
+        <DeckGL style={{ position: 'absolute', inset: '0px' }} viewState={viewState} onViewStateChange={({ viewState: next }) => { const camera = next as typeof KOREA_VIEW; if (!playing) setViewState({ longitude: camera.longitude, latitude: camera.latitude, zoom: camera.zoom, pitch: camera.pitch, bearing: camera.bearing }); }} controller layers={layers} getTooltip={({ object }) => object?.title ? { text: `${object.title}\n${object.venue}` } : null}>
           <MapGL style={{ width: '100%', height: '100%' }} mapStyle={MAP_STYLE} attributionControl={{ compact: true }} reuseMaps />
         </DeckGL>
         <div className="pointer-events-none absolute left-3 top-3 rounded-full bg-black/65 px-3 py-2 text-[11px] text-white/70 backdrop-blur">출발 · {profile.originName}</div>
         {playing && current && progress > 0.86 && progress < 1.14 && <div className="absolute inset-x-4 bottom-4 flex items-center gap-3 rounded-2xl bg-black/80 p-3 text-white backdrop-blur"><PosterImage src={current.posterUrl} title={current.title} className="size-12 rounded-xl object-cover" /><div className="min-w-0"><p className="truncate text-sm font-semibold">{current.title}</p><p className="text-xs text-white/45">{current.venue} 도착</p></div></div>}
       </div>
-      <div className="mt-4 flex flex-wrap items-center justify-center gap-3">
+      <div className="mt-4 flex items-center justify-center gap-3">
         <Button variant="outline" size="icon-lg" aria-label="처음부터" onClick={restart}><RotateCcw /></Button>
         <Button className="h-11 min-w-32 rounded-full bg-[#ff6b61] text-black hover:bg-[#ff827a]" disabled={!trips.length || reducedMotion} onClick={() => setPlaying((value) => !value)}>{playing ? <><Pause />일시정지</> : <><Play />재생하기</>}</Button>
-        <label className="flex h-11 items-center gap-2 rounded-full border border-black/10 bg-white px-4 text-xs text-black/50"><span>배속</span><select aria-label="지도 왕복 재생 속도" value={speed} onChange={(event) => setSpeed(Number(event.target.value))} className="bg-transparent font-semibold text-black outline-none"><option value="0.5">0.5×</option><option value="1">1×</option><option value="1.5">1.5×</option><option value="2">2×</option></select></label>
       </div>
+      <div className="mx-auto mt-3 flex w-fit items-center gap-1 rounded-full border border-black/10 bg-white/85 p-1.5 shadow-sm"><span className="px-2 text-[10px] font-medium text-black/35">배속</span>{[0.5, 1, 2, 3, 5].map((value) => <button key={value} type="button" aria-label={`${value}배속`} aria-pressed={speed === value} onClick={() => setSpeed(value)} className={`min-w-10 rounded-full px-2.5 py-1.5 text-xs font-semibold transition ${speed === value ? 'bg-[#1f1d19] text-[#dfff94] shadow-sm' : 'text-black/45 hover:bg-black/5 hover:text-black'}`}>{value}×</button>)}</div>
       {reducedMotion && <p className="mt-3 text-center text-xs text-black/45">동작 줄이기 설정에 따라 전체 원정 경로를 표시하고 있어요.</p>}
       </>}
     </section>
