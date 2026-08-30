@@ -19,10 +19,35 @@ export async function POST(request: Request) {
   const token = process.env.MAPBOX_ACCESS_TOKEN;
   if (!token) {
     const needle = parsed.data.query.toLowerCase();
-    const candidates = demos
+    const savedCandidates = demos
       .filter((item) => `${item.name} ${item.address}`.toLowerCase().includes(needle) || needle.includes(item.name.toLowerCase()))
       .sort((a, b) => b.name.length - a.name.length);
-    return Response.json({ candidates, demo: true });
+    if (savedCandidates.length) return Response.json({ candidates: savedCandidates, provider: 'saved' });
+
+    const fallbackUrl = new URL('https://nominatim.openstreetmap.org/search');
+    fallbackUrl.searchParams.set('q', parsed.data.query);
+    fallbackUrl.searchParams.set('format', 'jsonv2');
+    fallbackUrl.searchParams.set('addressdetails', '1');
+    fallbackUrl.searchParams.set('accept-language', 'ko,en');
+    fallbackUrl.searchParams.set('limit', '5');
+    try {
+      const fallbackResponse = await fetch(fallbackUrl, {
+        headers: { 'user-agent': 'DukjilLog/1.0 (https://dukjil-log.withgrshsh.chatgpt.site)' },
+        signal: AbortSignal.timeout(7000),
+      });
+      if (!fallbackResponse.ok) return Response.json({ error: '장소 검색 서비스가 잠시 응답하지 않아요.' }, { status: 502 });
+      const fallbackData = await fallbackResponse.json() as Array<{ place_id: number; osm_type?: string; osm_id?: number; name?: string; display_name: string; lat: string; lon: string; address?: { country_code?: string } }>;
+      return Response.json({ candidates: fallbackData.map((item) => ({
+        id: `osm-${item.osm_type || 'place'}-${item.osm_id || item.place_id}`,
+        name: item.name || item.display_name.split(',')[0] || parsed.data.query,
+        address: item.display_name,
+        latitude: Number(item.lat),
+        longitude: Number(item.lon),
+        countryCode: (item.address?.country_code || '').toUpperCase(),
+      })).filter((item) => Number.isFinite(item.latitude) && Number.isFinite(item.longitude)), provider: 'openstreetmap' });
+    } catch {
+      return Response.json({ error: '장소 검색 연결이 원활하지 않아요. 잠시 후 다시 시도해 주세요.' }, { status: 502 });
+    }
   }
   const url = new URL('https://api.mapbox.com/search/geocode/v6/forward');
   url.searchParams.set('q', parsed.data.query);

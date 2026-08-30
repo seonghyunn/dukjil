@@ -5,7 +5,7 @@ import DeckGL from '@deck.gl/react';
 import { GreatCircleLayer } from '@deck.gl/geo-layers';
 import { ScatterplotLayer } from '@deck.gl/layers';
 import MapGL from 'react-map-gl/maplibre';
-import { MapPin, Pause, Play, RotateCcw, Settings2 } from 'lucide-react';
+import { LoaderCircle, MapPin, Pause, Play, RotateCcw, Settings2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import type { Concert, GeocodeCandidate, Profile } from '@/lib/types';
@@ -25,6 +25,8 @@ export function JourneyMap({ concerts, profile, onProfileChange }: { concerts: C
   const [editingOrigin, setEditingOrigin] = useState(!profile.originConfigured);
   const [query, setQuery] = useState(profile.originAddress);
   const [candidates, setCandidates] = useState<GeocodeCandidate[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [searchMessage, setSearchMessage] = useState('');
   const animation = useRef<number | null>(null);
   const last = useRef<number>(0);
   const reducedMotion = typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -82,9 +84,18 @@ export function JourneyMap({ concerts, profile, onProfileChange }: { concerts: C
   function restart() { setTripIndex(0); setProgress(0); setPlaying(!reducedMotion); }
 
   async function searchOrigin() {
-    const response = await fetch('/api/geocode', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ query }) });
-    const data = await response.json() as { candidates?: GeocodeCandidate[] };
-    setCandidates(data.candidates || []);
+    if (!query.trim()) return;
+    setSearching(true); setSearchMessage(''); setCandidates([]);
+    try {
+      const response = await fetch('/api/geocode', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ query: query.trim() }) });
+      const data = await response.json() as { candidates?: GeocodeCandidate[]; error?: string };
+      if (!response.ok) throw new Error(data.error || '장소를 찾지 못했어요.');
+      const results = data.candidates || [];
+      setCandidates(results);
+      if (!results.length) setSearchMessage('검색 결과가 없어요. 도시명이나 도로명 주소로 다시 검색해 주세요.');
+    } catch (error) {
+      setSearchMessage(error instanceof Error ? error.message : '장소 검색 중 문제가 생겼어요.');
+    } finally { setSearching(false); }
   }
 
   async function chooseOrigin(candidate: GeocodeCandidate) {
@@ -95,14 +106,14 @@ export function JourneyMap({ concerts, profile, onProfileChange }: { concerts: C
   return (
     <section className="animate-in fade-in duration-300 pb-28">
       <header className="flex items-start justify-between"><div><p className="eyebrow">Tour map</p><h1 className="screen-title">내가 달려간 거리</h1></div><Button variant="outline" size="icon-lg" aria-label="출발지 설정" onClick={() => setEditingOrigin((value) => !value)}><Settings2 /></Button></header>
-      {!profile.originConfigured ? <div className="mt-6 rounded-[30px] border border-black/10 bg-[#f3f0e8] p-5 shadow-sm sm:p-7"><p className="text-xs font-medium text-[#d94d44]">첫 원정을 시작하기 전에</p><h2 className="mt-2 text-2xl font-semibold tracking-[-0.04em]">출발지를 직접 정해 주세요</h2><p className="mt-2 text-sm leading-6 text-black/45">집 근처 도시나 자주 출발하는 주소를 검색하면, 모든 공연의 예상 왕복거리를 이곳부터 계산해요.</p><div className="mt-5 flex gap-2"><Input value={query} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') void searchOrigin(); }} placeholder="예: 대전역, 부산 해운대구" className="h-11" /><Button onClick={searchOrigin} disabled={!query.trim()} className="h-11 bg-[#ff6b61] text-black hover:bg-[#ff827a]">찾기</Button></div>{candidates.length > 0 && <div className="mt-3 space-y-1 rounded-2xl bg-white/70 p-2">{candidates.map((candidate) => <button key={candidate.id} onClick={() => chooseOrigin(candidate)} className="flex w-full gap-2 rounded-xl p-2 text-left text-xs hover:bg-black/5"><MapPin className="size-4 shrink-0 text-[#d94d44]" /><span><b className="block">{candidate.name}</b><span className="text-black/45">{candidate.address}</span></span></button>)}</div>}</div> : <>
+      {!profile.originConfigured ? <div className="mt-6 rounded-[30px] border border-black/10 bg-[#f3f0e8] p-5 shadow-sm sm:p-7"><p className="text-xs font-medium text-[#d94d44]">첫 원정을 시작하기 전에</p><h2 className="mt-2 text-2xl font-semibold tracking-[-0.04em]">출발지를 직접 정해 주세요</h2><p className="mt-2 text-sm leading-6 text-black/45">집 근처 도시나 자주 출발하는 주소를 검색하면, 모든 공연의 예상 왕복거리를 이곳부터 계산해요.</p><div className="mt-5 flex gap-2"><Input value={query} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') void searchOrigin(); }} placeholder="예: 대전역, 부산 해운대구" className="h-11" /><Button onClick={searchOrigin} disabled={!query.trim() || searching} className="h-11 bg-[#ff6b61] text-black hover:bg-[#ff827a]">{searching && <LoaderCircle className="animate-spin" />}{searching ? '검색 중' : '찾기'}</Button></div>{searchMessage && <p role="status" className="mt-3 rounded-xl bg-white/70 p-3 text-xs text-[#a5413a]">{searchMessage}</p>}{candidates.length > 0 && <div className="mt-3 space-y-1 rounded-2xl bg-white/70 p-2">{candidates.map((candidate) => <button key={candidate.id} onClick={() => chooseOrigin(candidate)} className="flex w-full gap-2 rounded-xl p-2 text-left text-xs hover:bg-black/5"><MapPin className="size-4 shrink-0 text-[#d94d44]" /><span><b className="block">{candidate.name}</b><span className="text-black/45">{candidate.address}</span></span></button>)}</div>}</div> : <>
       <div className="mt-6 grid grid-cols-3 gap-2">
         <Stat label="원정" value={`${trips.length}회`} />
         <Stat label="예상 왕복" value={formatDistance(totalDistance)} />
         <Stat label="도시 · 국가" value={`${cities} · ${countries}`} />
       </div>
       <div className="mt-4 grid grid-cols-3 gap-1 rounded-2xl bg-black/[0.045] p-1.5">{([['month', '이번 달'], ['year', '올해'], ['all', '전체']] as const).map(([value, label]) => <button key={value} onClick={() => setPeriod(value)} className={`rounded-xl py-2 text-xs ${period === value ? 'bg-white text-black shadow-sm' : 'text-black/45'}`}>{label}</button>)}</div>
-      {editingOrigin && <div className="mt-4 rounded-3xl border border-black/10 bg-white/80 p-4 shadow-sm"><p className="text-xs text-black/50">모든 공연의 왕복 기준점</p><div className="mt-2 flex gap-2"><Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="도시 또는 주소" className="h-10" /><Button onClick={searchOrigin}>찾기</Button></div>{candidates.length > 0 && <div className="mt-3 space-y-1">{candidates.map((candidate) => <button key={candidate.id} onClick={() => chooseOrigin(candidate)} className="flex w-full gap-2 rounded-xl p-2 text-left text-xs hover:bg-black/5"><MapPin className="size-4 shrink-0 text-[#d94d44]" /><span><b className="block">{candidate.name}</b><span className="text-black/45">{candidate.address}</span></span></button>)}</div>}</div>}
+      {editingOrigin && <div className="mt-4 rounded-3xl border border-black/10 bg-white/80 p-4 shadow-sm"><p className="text-xs text-black/50">모든 공연의 왕복 기준점</p><div className="mt-2 flex gap-2"><Input value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') void searchOrigin(); }} placeholder="도시 또는 주소" className="h-10" /><Button onClick={searchOrigin} disabled={!query.trim() || searching}>{searching ? '검색 중' : '찾기'}</Button></div>{searchMessage && <p role="status" className="mt-3 text-xs text-[#a5413a]">{searchMessage}</p>}{candidates.length > 0 && <div className="mt-3 space-y-1">{candidates.map((candidate) => <button key={candidate.id} onClick={() => chooseOrigin(candidate)} className="flex w-full gap-2 rounded-xl p-2 text-left text-xs hover:bg-black/5"><MapPin className="size-4 shrink-0 text-[#d94d44]" /><span><b className="block">{candidate.name}</b><span className="text-black/45">{candidate.address}</span></span></button>)}</div>}</div>}
       <div className="relative mt-4 h-[430px] overflow-hidden rounded-[30px] border border-black/10 bg-[#e6ece7] shadow-[0_18px_50px_rgba(75,66,47,.14)]">
         <DeckGL style={{ position: 'absolute', inset: '0px' }} initialViewState={{ longitude: 128.5, latitude: 34.8, zoom: trips.some((trip) => trip.countryCode !== 'KR') ? 3.1 : 5.5, pitch: 20, bearing: 0 }} controller layers={layers} getTooltip={({ object }) => object?.title ? { text: `${object.title}\n${object.venue}` } : null}>
           <MapGL style={{ width: '100%', height: '100%' }} mapStyle={MAP_STYLE} attributionControl={{ compact: true }} reuseMaps />
