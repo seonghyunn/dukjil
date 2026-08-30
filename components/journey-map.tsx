@@ -21,6 +21,7 @@ export function JourneyMap({ concerts, profile, onProfileChange }: { concerts: C
   const [playing, setPlaying] = useState(false);
   const [tripIndex, setTripIndex] = useState(0);
   const [progress, setProgress] = useState(0);
+  const [speed, setSpeed] = useState(1);
   const [editingOrigin, setEditingOrigin] = useState(false);
   const [query, setQuery] = useState(profile.originAddress);
   const [candidates, setCandidates] = useState<GeocodeCandidate[]>([]);
@@ -52,7 +53,7 @@ export function JourneyMap({ concerts, profile, onProfileChange }: { concerts: C
       const delta = Math.min(now - last.current, 100);
       last.current = now;
       setProgress((value) => {
-        const next = value + delta / 2600;
+        const next = value + (delta * speed) / 2600;
         if (next >= 2) {
           if (tripIndex >= trips.length - 1) { setPlaying(false); return 2; }
           setTripIndex((index) => index + 1); return 0;
@@ -63,7 +64,7 @@ export function JourneyMap({ concerts, profile, onProfileChange }: { concerts: C
     };
     animation.current = requestAnimationFrame(step);
     return () => { if (animation.current) cancelAnimationFrame(animation.current); animation.current = null; last.current = 0; };
-  }, [playing, tripIndex, trips.length, reducedMotion]);
+  }, [playing, tripIndex, trips.length, reducedMotion, speed]);
 
   useEffect(() => { setPlaying(false); setTripIndex(0); setProgress(0); }, [period]);
 
@@ -108,9 +109,10 @@ export function JourneyMap({ concerts, profile, onProfileChange }: { concerts: C
         <div className="pointer-events-none absolute left-3 top-3 rounded-full bg-black/65 px-3 py-2 text-[11px] text-white/70 backdrop-blur">출발 · {profile.originName}</div>
         {playing && current && progress > 0.86 && progress < 1.14 && <div className="absolute inset-x-4 bottom-4 flex items-center gap-3 rounded-2xl bg-black/80 p-3 text-white backdrop-blur"><PosterImage src={current.posterUrl} title={current.title} className="size-12 rounded-xl object-cover" /><div className="min-w-0"><p className="truncate text-sm font-semibold">{current.title}</p><p className="text-xs text-white/45">{current.venue} 도착</p></div></div>}
       </div>
-      <div className="mt-4 flex items-center justify-center gap-3">
+      <div className="mt-4 flex flex-wrap items-center justify-center gap-3">
         <Button variant="outline" size="icon-lg" aria-label="처음부터" onClick={restart}><RotateCcw /></Button>
         <Button className="h-11 min-w-32 rounded-full bg-[#ff6b61] text-black hover:bg-[#ff827a]" disabled={!trips.length || reducedMotion} onClick={() => setPlaying((value) => !value)}>{playing ? <><Pause />일시정지</> : <><Play />재생하기</>}</Button>
+        <label className="flex h-11 items-center gap-2 rounded-full border border-black/10 bg-white px-4 text-xs text-black/50"><span>배속</span><select aria-label="지도 왕복 재생 속도" value={speed} onChange={(event) => setSpeed(Number(event.target.value))} className="bg-transparent font-semibold text-black outline-none"><option value="0.5">0.5×</option><option value="1">1×</option><option value="1.5">1.5×</option><option value="2">2×</option></select></label>
       </div>
       {reducedMotion && <p className="mt-3 text-center text-xs text-black/45">동작 줄이기 설정에 따라 전체 원정 경로를 표시하고 있어요.</p>}
     </section>

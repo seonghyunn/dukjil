@@ -4,6 +4,7 @@ export type ConcertReview = {
   id: string;
   body: string;
   createdAt: string;
+  rating: number | null;
 };
 
 export type Concert = {

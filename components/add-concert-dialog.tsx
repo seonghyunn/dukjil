@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
+import { RatingPicker } from '@/components/rating-picker';
 import type { Concert, GeocodeCandidate, ImportDraft } from '@/lib/types';
 
 type Props = {
@@ -23,6 +24,8 @@ export function AddConcertDialog({ open, onOpenChange, onSave }: Props) {
   const [mode, setMode] = useState<'url' | 'direct'>('url');
   const [form, setForm] = useState(emptyForm);
   const [status, setStatus] = useState<'scheduled' | 'attended'>('scheduled');
+  const [statusOverridden, setStatusOverridden] = useState(false);
+  const [initialRating, setInitialRating] = useState(5);
   const [coords, setCoords] = useState<GeocodeCandidate | null>(null);
   const [candidates, setCandidates] = useState<GeocodeCandidate[]>([]);
   const [imageFile, setImageFile] = useState<File>();
@@ -34,7 +37,7 @@ export function AddConcertDialog({ open, onOpenChange, onSave }: Props) {
 
   useEffect(() => {
     if (!open) {
-      setForm(emptyForm); setCoords(null); setCandidates([]); setImageFile(undefined); setDateCandidates([]); setSelectedDates([]); setPriceCandidates([]); setMessage('');
+      setForm(emptyForm); setStatus('scheduled'); setStatusOverridden(false); setInitialRating(5); setCoords(null); setCandidates([]); setImageFile(undefined); setDateCandidates([]); setSelectedDates([]); setPriceCandidates([]); setMessage('');
     }
   }, [open]);
 
@@ -102,7 +105,7 @@ export function AddConcertDialog({ open, onOpenChange, onSave }: Props) {
       setMessage('공연명, 아티스트, 일시와 장소를 입력해 주세요.'); return;
     }
     setLoading(true);
-    const performances = selectedDates.length ? selectedDates : [new Date(form.performanceAt).toISOString()];
+    const performances = selectedDates.length ? selectedDates : [toKoreanPerformanceIso(form.performanceAt)];
     const concerts: Concert[] = performances.map((performanceAt) => ({
       id: crypto.randomUUID(), title: form.title.trim(),
       artists: form.artists.split(',').map((value) => value.trim()).filter(Boolean),
@@ -110,7 +113,7 @@ export function AddConcertDialog({ open, onOpenChange, onSave }: Props) {
       address: form.address.trim(), latitude: coords?.latitude ?? null, longitude: coords?.longitude ?? null,
       countryCode: coords?.countryCode || 'KR', bookingProvider: form.bookingProvider.trim(), sourceUrl: form.sourceUrl.trim(),
       listPrice: form.listPrice === '' ? null : Number(form.listPrice), paidAmount: form.paidAmount === '' ? null : Number(form.paidAmount),
-      status, reviews: form.initialReview.trim() ? [{ id: crypto.randomUUID(), body: form.initialReview.trim(), createdAt: new Date().toISOString() }] : [], posterUrl: form.posterUrl.trim(), officialPosterUrl: form.posterUrl.trim(), posterSource: imageFile ? 'upload' : 'official',
+      status: statusOverridden ? status : initialStatusFor(performanceAt), reviews: form.initialReview.trim() ? [{ id: crypto.randomUUID(), body: form.initialReview.trim(), createdAt: new Date().toISOString(), rating: initialRating }] : [], posterUrl: form.posterUrl.trim(), officialPosterUrl: form.posterUrl.trim(), posterSource: imageFile ? 'upload' : 'official',
     }));
     try { await onSave(concerts, imageFile); onOpenChange(false); }
     catch { setMessage('저장하지 못했어요. 잠시 후 다시 시도해 주세요.'); }
@@ -153,8 +156,8 @@ export function AddConcertDialog({ open, onOpenChange, onSave }: Props) {
             {candidates.length > 0 && <div className="space-y-2 rounded-2xl bg-black/5 p-3">{candidates.map((candidate) => <button key={candidate.id} type="button" onClick={() => { setCoords(candidate); update('address', candidate.address); }} className={`flex w-full items-start gap-2 rounded-xl p-2 text-left text-xs ${coords?.id === candidate.id ? 'bg-[#dfff94] text-black' : 'hover:bg-black/5'}`}><MapPin className="mt-0.5 size-4 shrink-0" /><span><b className="block">{candidate.name}</b>{candidate.address}</span></button>)}</div>}
             <Field label="공식 이미지 URL"><Input value={form.posterUrl} onChange={(e) => update('posterUrl', e.target.value)} placeholder="자동 추출 또는 직접 입력" /></Field>
             <label className="flex cursor-pointer items-center gap-3 rounded-2xl border border-dashed border-black/15 p-4 text-sm text-black/60 hover:border-black/30"><ImagePlus className="size-5" /><span>{imageFile?.name || '이미지가 없으면 직접 추가 (최대 5MB)'}</span><input type="file" accept="image/jpeg,image/png,image/webp" className="sr-only" onChange={(e) => setImageFile(e.target.files?.[0])} /></label>
-            <div className="grid grid-cols-2 gap-2"><Button type="button" variant={status === 'scheduled' ? 'default' : 'outline'} onClick={() => setStatus('scheduled')}>예정</Button><Button type="button" variant={status === 'attended' ? 'default' : 'outline'} onClick={() => setStatus('attended')}>관람 완료</Button></div>
-            <Field label="첫 후기 (선택)"><Textarea value={form.initialReview} onChange={(e) => update('initialReview', e.target.value)} maxLength={2000} placeholder="저장 후 댓글처럼 후기를 계속 남길 수 있어요." className="min-h-24" /></Field>
+            <div><div className="grid grid-cols-2 gap-2"><Button type="button" variant={(statusOverridden ? status : initialStatusFor(selectedDates[0] || form.performanceAt)) === 'scheduled' ? 'default' : 'outline'} onClick={() => { setStatus('scheduled'); setStatusOverridden(true); }}>예정</Button><Button type="button" variant={(statusOverridden ? status : initialStatusFor(selectedDates[0] || form.performanceAt)) === 'attended' ? 'default' : 'outline'} onClick={() => { setStatus('attended'); setStatusOverridden(true); }}>관람 완료</Button></div><p className="mt-2 text-[11px] text-black/35">공연일이 오늘이거나 지난 경우 관람 완료, 내일부터는 예정으로 자동 설정돼요.</p></div>
+            <Field label="첫 후기 (선택)"><div className="space-y-2"><RatingPicker value={initialRating} onChange={setInitialRating} /><Textarea value={form.initialReview} onChange={(e) => update('initialReview', e.target.value)} maxLength={2000} placeholder="저장 후 댓글처럼 후기를 계속 남길 수 있어요." className="min-h-24" /></div></Field>
             {message && <p role="status" className="rounded-xl bg-black/5 p-3 text-xs leading-5 text-[#5d7b27]">{message}</p>}
             <Button type="submit" className="h-12 w-full bg-[#ff6b61] text-[#17120f] hover:bg-[#ff827a]" disabled={loading}>{loading && <LoaderCircle className="animate-spin" />}{selectedDates.length > 1 ? `${selectedDates.length}개 회차 각각 저장하기` : '공연 저장하기'}</Button>
           </form>
@@ -186,4 +189,19 @@ function venueSearchQuery(venue: string, address: string) {
   if (knownName) return knownName;
   const inside = combined.match(/(?:내|內)\s*([^,()]+?(?:홀|아레나|돔|스타디움|체육관|극장|공연장|센터))/)?.[1];
   return (inside || venue || address).replace(/\([^)]*\)/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+function initialStatusFor(value: string): 'scheduled' | 'attended' {
+  const performance = new Date(hasTimeZone(value) ? value : `${value}:00+09:00`);
+  if (Number.isNaN(performance.getTime())) return 'scheduled';
+  const dateKey = (date: Date) => new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit' }).format(date);
+  return dateKey(performance) <= dateKey(new Date()) ? 'attended' : 'scheduled';
+}
+
+function toKoreanPerformanceIso(value: string) {
+  return new Date(hasTimeZone(value) ? value : `${value}:00+09:00`).toISOString();
+}
+
+function hasTimeZone(value: string) {
+  return /(?:Z|[+-]\d{2}:?\d{2})$/i.test(value);
 }

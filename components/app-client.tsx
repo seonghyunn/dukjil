@@ -9,6 +9,7 @@ import { AddConcertDialog } from './add-concert-dialog';
 import { AuthGate } from './auth-gate';
 import { CalendarView } from './calendar-view';
 import { PosterImage } from './poster-image';
+import { RatingPicker, RatingStars } from './rating-picker';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
@@ -48,7 +49,7 @@ export function AppClient() {
     const client = supabase;
     if (!client) return;
     const [{ data: rows }, { data: profileRow }] = await Promise.all([
-      client.from('concerts').select('*, concert_artists(artists(name)), concert_reviews(id, body, created_at)').order('performance_at'),
+      client.from('concerts').select('*, concert_artists(artists(name)), concert_reviews(id, body, rating, created_at)').order('performance_at'),
       client.from('profiles').select('*').eq('user_id', userId).maybeSingle(),
     ]);
     if (rows) {
@@ -92,7 +93,7 @@ export function AppClient() {
       }
       await supabase.from('concert_artists').insert({ concert_id: concert.id, artist_id: artist.id });
     }
-    for (const review of concert.reviews) await supabase.from('concert_reviews').insert({ id: review.id, concert_id: concert.id, user_id: session.user.id, body: review.body, created_at: review.createdAt });
+    for (const review of concert.reviews) await supabase.from('concert_reviews').insert({ id: review.id, concert_id: concert.id, user_id: session.user.id, body: review.body, rating: review.rating, created_at: review.createdAt });
     await loadRemoteData(session.user.id);
   }
 
@@ -128,12 +129,12 @@ export function AppClient() {
     }
   }
 
-  async function addReview(concert: Concert, body: string) {
-    const review = { id: crypto.randomUUID(), body: body.trim(), createdAt: new Date().toISOString() };
+  async function addReview(concert: Concert, body: string, rating: number) {
+    const review = { id: crypto.randomUUID(), body: body.trim(), createdAt: new Date().toISOString(), rating };
     if (!review.body) return;
     const next = { ...concert, reviews: [...concert.reviews, review] };
     setConcerts((items) => items.map((item) => item.id === next.id ? next : item)); setSelected(next);
-    if (supabase && session?.user) await supabase.from('concert_reviews').insert({ id: review.id, concert_id: concert.id, user_id: session.user.id, body: review.body, created_at: review.createdAt });
+    if (supabase && session?.user) await supabase.from('concert_reviews').insert({ id: review.id, concert_id: concert.id, user_id: session.user.id, body: review.body, rating: review.rating, created_at: review.createdAt });
   }
 
   async function deleteReview(concert: Concert, reviewId: string) {
@@ -239,16 +240,17 @@ function NowView({ concerts, year, onYearChange, onAdd, onSelect }: { concerts: 
   </section>;
 }
 
-function ConcertDetail({ concert, onOpenChange, onSave, onAddReview, onDeleteReview, onDelete }: { concert: Concert | null; onOpenChange: (open: boolean) => void; onSave: (concert: Concert, imageFile?: File) => Promise<void>; onAddReview: (concert: Concert, body: string) => Promise<void>; onDeleteReview: (concert: Concert, reviewId: string) => Promise<void>; onDelete: (concert: Concert) => Promise<void> }) {
+function ConcertDetail({ concert, onOpenChange, onSave, onAddReview, onDeleteReview, onDelete }: { concert: Concert | null; onOpenChange: (open: boolean) => void; onSave: (concert: Concert, imageFile?: File) => Promise<void>; onAddReview: (concert: Concert, body: string, rating: number) => Promise<void>; onDeleteReview: (concert: Concert, reviewId: string) => Promise<void>; onDelete: (concert: Concert) => Promise<void> }) {
   const [draft, setDraft] = useState<Concert | null>(concert);
   const [comment, setComment] = useState('');
+  const [rating, setRating] = useState(5);
   const [imageFile, setImageFile] = useState<File>();
   const [saving, setSaving] = useState(false);
   useEffect(() => { setDraft(concert); setImageFile(undefined); }, [concert]);
   if (!concert || !draft) return null;
   const update = <K extends keyof Concert>(key: K, value: Concert[K]) => setDraft((current) => current ? { ...current, [key]: value } : current);
   async function saveDetails() { setSaving(true); try { await onSave(draft!, imageFile); setImageFile(undefined); } finally { setSaving(false); } }
-  async function postComment() { if (!comment.trim()) return; await onAddReview(concert!, comment); setComment(''); }
+  async function postComment() { if (!comment.trim()) return; await onAddReview(concert!, comment, rating); setComment(''); setRating(5); }
   return <Dialog open onOpenChange={onOpenChange}><DialogContent className="max-h-[92vh] overflow-y-auto border-black/10 bg-[#fbfaf6] p-0 text-[#1c1b18] sm:max-w-xl">
     <div className="relative h-44"><PosterImage src={draft.posterUrl} title={draft.title} className="h-full w-full object-cover" /><span className="absolute inset-0 bg-gradient-to-t from-[#fbfaf6] to-transparent" /><span className="absolute bottom-3 right-4 rounded-full bg-black/65 px-3 py-1.5 text-[11px] text-white backdrop-blur">{draft.posterSource === 'upload' ? '직접 업로드 사진' : '공식 이미지'}</span></div>
     <div className="space-y-5 px-5 pb-6">
@@ -269,8 +271,8 @@ function ConcertDetail({ concert, onOpenChange, onSave, onAddReview, onDeleteRev
       <Button className="h-11 w-full bg-[#1f1d19] text-white hover:bg-black" onClick={saveDetails} disabled={saving}>{saving ? '저장 중…' : '상세 정보 저장'}</Button>
 
       <section className="border-t border-black/10 pt-5"><div className="flex items-center justify-between"><h3 className="flex items-center gap-2 text-sm font-semibold"><MessageCircle className="size-4 text-[#d94d44]" />공연 후기</h3><span className="text-[11px] text-black/35">{concert.reviews.length}개</span></div>
-        <div className="mt-3 space-y-2">{concert.reviews.length ? concert.reviews.map((review) => <article key={review.id} className="group rounded-2xl bg-[#f1eee6] p-3"><div className="flex items-start justify-between gap-3"><p className="whitespace-pre-wrap text-sm leading-6 text-black/75">{review.body}</p><button aria-label="후기 삭제" onClick={() => onDeleteReview(concert, review.id)} className="shrink-0 rounded-full p-1 text-black/20 hover:bg-white hover:text-red-500"><Trash2 className="size-3.5" /></button></div><time className="mt-2 block text-[10px] text-black/30">{new Intl.DateTimeFormat('ko-KR', { month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' }).format(new Date(review.createdAt))}</time></article>) : <p className="rounded-2xl border border-dashed border-black/10 p-5 text-center text-xs text-black/35">첫 후기를 남겨보세요.</p>}</div>
-        <div className="mt-3 flex items-end gap-2"><Textarea value={comment} onChange={(event) => setComment(event.target.value)} maxLength={2000} className="min-h-20 resize-none" placeholder="공연 후기를 댓글처럼 하나씩 남겨보세요." /><Button size="icon-lg" aria-label="후기 등록" className="shrink-0 bg-[#ff6b61] text-black hover:bg-[#ff827a]" onClick={postComment} disabled={!comment.trim()}><Send /></Button></div>
+        <div className="mt-3 space-y-2">{concert.reviews.length ? concert.reviews.map((review) => <article key={review.id} className="group rounded-2xl bg-[#f1eee6] p-3"><div className="mb-2 flex items-center justify-between gap-3">{review.rating == null ? <span /> : <RatingStars value={review.rating} />}<button aria-label="후기 삭제" onClick={() => onDeleteReview(concert, review.id)} className="shrink-0 rounded-full p-1 text-black/20 hover:bg-white hover:text-red-500"><Trash2 className="size-3.5" /></button></div><p className="whitespace-pre-wrap text-sm leading-6 text-black/75">{review.body}</p><time className="mt-2 block text-[10px] text-black/30">{new Intl.DateTimeFormat('ko-KR', { month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' }).format(new Date(review.createdAt))}</time></article>) : <p className="rounded-2xl border border-dashed border-black/10 p-5 text-center text-xs text-black/35">첫 후기를 남겨보세요.</p>}</div>
+        <div className="mt-3 space-y-2"><RatingPicker value={rating} onChange={setRating} /><div className="flex items-end gap-2"><Textarea value={comment} onChange={(event) => setComment(event.target.value)} maxLength={2000} className="min-h-20 resize-none" placeholder="공연 후기를 댓글처럼 하나씩 남겨보세요." /><Button size="icon-lg" aria-label="후기 등록" className="shrink-0 bg-[#ff6b61] text-black hover:bg-[#ff827a]" onClick={postComment} disabled={!comment.trim()}><Send /></Button></div></div>
       </section>
       <button onClick={() => onDelete(concert)} className="w-full py-1 text-xs text-red-500/65 hover:text-red-600">이 기록 삭제</button>
     </div>
@@ -291,4 +293,4 @@ function toDateTimeInput(value: string) {
   const get = (type: Intl.DateTimeFormatPartTypes) => parts.find((part) => part.type === type)?.value || '';
   return `${get('year')}-${get('month')}-${get('day')}T${get('hour')}:${get('minute')}`;
 }
-function rowToConcert(row: any, posterUrl: string): Concert { return { id: row.id, title: row.title, artists: (row.concert_artists || []).map((item: any) => item.artists?.name).filter(Boolean), performanceAt: row.performance_at, venue: row.venue, address: row.address || '', latitude: row.latitude, longitude: row.longitude, countryCode: row.country_code || 'KR', bookingProvider: row.booking_provider || '', sourceUrl: row.source_url || '', listPrice: row.list_price, paidAmount: row.paid_amount, status: row.status, reviews: (row.concert_reviews || []).map((review: any) => ({ id: review.id, body: review.body, createdAt: review.created_at })).sort((a: { createdAt: string }, b: { createdAt: string }) => a.createdAt.localeCompare(b.createdAt)), posterUrl, officialPosterUrl: row.official_poster_url || row.poster_url || '', posterSource: row.poster_source || (row.poster_storage_path ? 'upload' : 'official'), posterStoragePath: row.poster_storage_path || undefined }; }
+function rowToConcert(row: any, posterUrl: string): Concert { return { id: row.id, title: row.title, artists: (row.concert_artists || []).map((item: any) => item.artists?.name).filter(Boolean), performanceAt: row.performance_at, venue: row.venue, address: row.address || '', latitude: row.latitude, longitude: row.longitude, countryCode: row.country_code || 'KR', bookingProvider: row.booking_provider || '', sourceUrl: row.source_url || '', listPrice: row.list_price, paidAmount: row.paid_amount, status: row.status, reviews: (row.concert_reviews || []).map((review: any) => ({ id: review.id, body: review.body, rating: review.rating == null ? null : Number(review.rating), createdAt: review.created_at })).sort((a: { createdAt: string }, b: { createdAt: string }) => a.createdAt.localeCompare(b.createdAt)), posterUrl, officialPosterUrl: row.official_poster_url || row.poster_url || '', posterSource: row.poster_source || (row.poster_storage_path ? 'upload' : 'official'), posterStoragePath: row.poster_storage_path || undefined }; }
