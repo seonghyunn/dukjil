@@ -13,7 +13,7 @@ import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
 import { demoConcerts, demoProfile } from '@/lib/demo-data';
-import { isSupabaseConfigured, supabase } from '@/lib/supabase';
+import { isSupabaseConfigured, isTestMode, supabase } from '@/lib/supabase';
 import type { Concert, Profile } from '@/lib/types';
 
 type View = 'now' | 'calendar' | 'map';
@@ -28,12 +28,12 @@ export function AppClient() {
   const [concerts, setConcerts] = useState<Concert[]>(demoConcerts);
   const [profile, setProfile] = useState<Profile>(demoProfile);
   const [session, setSession] = useState<Session | null>(null);
-  const [authReady, setAuthReady] = useState(!isSupabaseConfigured);
+  const [authReady, setAuthReady] = useState(isTestMode || !isSupabaseConfigured);
   const [addOpen, setAddOpen] = useState(false);
   const [selected, setSelected] = useState<Concert | null>(null);
 
   useEffect(() => {
-    if (!supabase) return;
+    if (!supabase || isTestMode) return;
     supabase.auth.getSession().then(({ data }) => { setSession(data.session); setAuthReady(true); });
     const { data } = supabase.auth.onAuthStateChange((_event, next) => { setSession(next); setAuthReady(true); });
     return () => data.subscription.unsubscribe();
@@ -101,12 +101,17 @@ export function AppClient() {
   }
 
   if (!authReady) return <main className="grid min-h-screen place-items-center bg-[#f3f0e8] text-[#ff6b61]"><Sparkles className="animate-pulse" /></main>;
-  if (isSupabaseConfigured && !session) return <AuthGate />;
+  if (isSupabaseConfigured && !isTestMode && !session) return <AuthGate />;
 
   return (
     <main className="min-h-screen bg-[#ebe5da] text-[#1c1b18]">
       <div className="mx-auto min-h-screen max-w-6xl bg-[#f8f5ee] px-5 pb-24 pt-7 shadow-[0_0_70px_rgba(71,54,31,.08)] sm:px-8 lg:px-10">
-        {!isSupabaseConfigured && <div className="mb-5 flex items-center justify-between rounded-2xl border border-[#dfff94]/20 bg-[#dfff94]/10 px-3 py-2 text-[11px] text-[#dfff94]"><span>샘플 데이터로 둘러보는 데모 모드</span><span>외부 연결 준비됨</span></div>}
+        {(isTestMode || !isSupabaseConfigured) && (
+          <div className="mb-5 flex items-center justify-between gap-3 rounded-2xl border border-[#ff6b61]/20 bg-[#fff0ec] px-3 py-2 text-[11px] text-[#a5413a]">
+            <span>{isTestMode ? '테스트 모드 · 로그인 없이 둘러보는 중' : '샘플 데이터로 둘러보는 데모 모드'}</span>
+            <span className="shrink-0">새로고침하면 입력이 초기화돼요</span>
+          </div>
+        )}
         {view === 'now' && <NowView concerts={concerts} onAdd={() => setAddOpen(true)} onSelect={setSelected} />}
         {view === 'calendar' && <CalendarView concerts={concerts} onSelect={setSelected} />}
         {view === 'map' && <JourneyMap concerts={concerts} profile={profile} onProfileChange={saveProfile} />}
