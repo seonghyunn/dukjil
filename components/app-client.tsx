@@ -3,9 +3,10 @@
 import { useEffect, useState } from 'react';
 import dynamic from 'next/dynamic';
 import type { Session } from '@supabase/supabase-js';
-import { CalendarClock, CalendarDays, ChevronRight, CircleDollarSign, ImagePlus, LogOut, Map, MessageCircle, Plus, Send, Sparkles, Trash2, Trophy, WalletCards } from 'lucide-react';
+import { CalendarClock, CalendarDays, ChevronRight, CircleDollarSign, ImagePlus, LogOut, Map as MapIcon, MessageCircle, Plus, Replace, Send, Sparkles, Trash2, Trophy, WalletCards } from 'lucide-react';
 import { Bar, BarChart, CartesianGrid, Cell, Legend, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { AddConcertDialog } from './add-concert-dialog';
+import { BulkEditDialog } from './bulk-edit-dialog';
 import { AuthGate } from './auth-gate';
 import { CalendarView } from './calendar-view';
 import { PosterImage } from './poster-image';
@@ -34,6 +35,7 @@ export function AppClient() {
   const [session, setSession] = useState<Session | null>(null);
   const [authReady, setAuthReady] = useState(isTestMode || !isSupabaseConfigured);
   const [addOpen, setAddOpen] = useState(false);
+  const [bulkEditOpen, setBulkEditOpen] = useState(false);
   const [selected, setSelected] = useState<Concert | null>(null);
 
   useEffect(() => {
@@ -67,14 +69,20 @@ export function AppClient() {
   }
 
   async function saveConcerts(nextConcerts: Concert[], imageFile?: File) {
-    for (const concert of nextConcerts) await saveConcert(concert, imageFile);
+    if (!supabase || !session?.user) {
+      const prepared = nextConcerts.map((concert) => ({ ...concert, posterUrl: imageFile ? URL.createObjectURL(imageFile) : concert.posterUrl, posterSource: imageFile ? 'upload' as const : 'official' as const }));
+      setConcerts((items) => [...items, ...prepared]);
+    } else {
+      for (const concert of nextConcerts) await saveConcert(concert, imageFile, false);
+      await loadRemoteData(session.user.id);
+    }
     const latest = [...nextConcerts].sort((a, b) => b.performanceAt.localeCompare(a.performanceAt))[0];
     if (latest) setStatsYear(new Date(latest.performanceAt).getFullYear());
     setView('now');
   }
 
-  async function saveConcert(concert: Concert, imageFile?: File) {
-    if (!supabase || !session?.user) { setConcerts((items) => [...items, { ...concert, posterUrl: imageFile ? URL.createObjectURL(imageFile) : concert.posterUrl, posterSource: imageFile ? 'upload' : 'official' }]); return; }
+  async function saveConcert(concert: Concert, imageFile?: File, reload = true) {
+    if (!supabase || !session?.user) return;
     let storagePath = '';
     if (imageFile) {
       if (imageFile.size > 5 * 1024 * 1024 || !['image/jpeg', 'image/png', 'image/webp'].includes(imageFile.type)) throw new Error('invalid image');
@@ -94,6 +102,28 @@ export function AppClient() {
       await supabase.from('concert_artists').insert({ concert_id: concert.id, artist_id: artist.id });
     }
     for (const review of concert.reviews) await supabase.from('concert_reviews').insert({ id: review.id, concert_id: concert.id, user_id: session.user.id, body: review.body, created_at: review.createdAt });
+    if (reload) await loadRemoteData(session.user.id);
+  }
+
+  async function bulkUpdateConcerts(changed: Concert[]) {
+    const byId = new Map(changed.map((concert) => [concert.id, concert]));
+    if (!supabase || !session?.user) { setConcerts((items) => items.map((concert) => byId.get(concert.id) || concert)); return; }
+    for (const concert of changed) {
+      const { error } = await supabase.from('concerts').update({ venue: concert.venue, address: concert.address, latitude: concert.latitude, longitude: concert.longitude, country_code: concert.countryCode, booking_provider: concert.bookingProvider }).eq('id', concert.id);
+      if (error) throw error;
+      const deleted = await supabase.from('concert_artists').delete().eq('concert_id', concert.id);
+      if (deleted.error) throw deleted.error;
+      for (const name of concert.artists) {
+        let { data: artist } = await supabase.from('artists').select('id').eq('name', name).maybeSingle();
+        if (!artist) {
+          const created = await supabase.from('artists').insert({ name }).select('id').single();
+          if (created.error) throw created.error;
+          artist = created.data;
+        }
+        const linked = await supabase.from('concert_artists').insert({ concert_id: concert.id, artist_id: artist.id });
+        if (linked.error) throw linked.error;
+      }
+    }
     await loadRemoteData(session.user.id);
   }
 
@@ -160,24 +190,25 @@ export function AppClient() {
             <span className="shrink-0">새로고침하면 입력이 초기화돼요</span>
           </div>
         )}
-        {view === 'now' && <NowView concerts={concerts} year={statsYear} onYearChange={setStatsYear} onSelect={setSelected} />}
+        {view === 'now' && <NowView concerts={concerts} year={statsYear} onYearChange={setStatsYear} onSelect={setSelected} onBulkEdit={() => setBulkEditOpen(true)} />}
         {view === 'calendar' && <CalendarView concerts={concerts} onSelect={setSelected} />}
         {view === 'map' && <JourneyMap concerts={concerts} profile={profile} onProfileChange={saveProfile} />}
         <button aria-label="공연 추가" onClick={() => setAddOpen(true)} className="fixed bottom-[90px] right-5 z-20 grid size-12 place-items-center rounded-full bg-[#ff6b61] text-black shadow-xl shadow-black/40 sm:right-[max(24px,calc((100vw-1152px)/2))]"><Plus /></button>
         <nav aria-label="주요 메뉴" className="fixed inset-x-0 bottom-4 z-20 mx-auto flex w-[calc(100%-32px)] max-w-[430px] items-center justify-around rounded-[24px] border border-black/10 bg-[#fffdf8e8] p-2 shadow-[0_16px_45px_rgba(46,35,20,.18)] backdrop-blur-xl">
           <NavButton active={view === 'now'} onClick={() => setView('now')} icon={<WalletCards />} label="지금" />
           <NavButton active={view === 'calendar'} onClick={() => setView('calendar')} icon={<CalendarDays />} label="캘린더" />
-          <NavButton active={view === 'map'} onClick={() => setView('map')} icon={<Map />} label="원정 지도" />
+          <NavButton active={view === 'map'} onClick={() => setView('map')} icon={<MapIcon />} label="원정 지도" />
         </nav>
         {session && <button aria-label="로그아웃" onClick={() => supabase?.auth.signOut()} className="fixed right-4 top-4 rounded-full p-2 text-black/30 hover:text-black"><LogOut className="size-4" /></button>}
       </div>
       <AddConcertDialog open={addOpen} onOpenChange={setAddOpen} onSave={saveConcerts} concerts={concerts} />
+      <BulkEditDialog open={bulkEditOpen} onOpenChange={setBulkEditOpen} concerts={concerts} onSave={bulkUpdateConcerts} />
       <ConcertDetail concert={selected} concerts={concerts} onOpenChange={(open) => !open && setSelected(null)} onSave={updateConcert} onAddReview={addReview} onDeleteReview={deleteReview} onDelete={deleteConcert} />
     </main>
   );
 }
 
-function NowView({ concerts, year, onYearChange, onSelect }: { concerts: Concert[]; year: number; onYearChange: (year: number) => void; onSelect: (concert: Concert) => void }) {
+function NowView({ concerts, year, onYearChange, onSelect, onBulkEdit }: { concerts: Concert[]; year: number; onYearChange: (year: number) => void; onSelect: (concert: Concert) => void; onBulkEdit: () => void }) {
   const now = new Date();
   const availableYears = [...new Set([now.getFullYear(), ...concerts.map((concert) => new Date(concert.performanceAt).getFullYear())])].sort((a, b) => b - a);
   const [filter, setFilter] = useState<'all' | 'attended' | 'scheduled'>('all');
@@ -232,7 +263,7 @@ function NowView({ concerts, year, onYearChange, onSelect }: { concerts: Concert
     <div className="mt-4 grid grid-cols-2 gap-3 lg:grid-cols-4"><DashboardMetric icon={<CalendarClock />} label={`${now.getMonth() + 1}월 관람`} value={`${monthAttended.length}회`} detail={overdueCount ? `완료 확인 ${overdueCount}건` : '모두 정리했어요'} /><DashboardMetric icon={<CircleDollarSign />} label={`${now.getMonth() + 1}월 지출`} value={money(monthPaid)} detail={`예정 포함 · 정가 ${money(monthList)}`} /><DashboardMetric icon={<Trophy />} label={`${year} 관심 아티스트`} value={topArtist?.[0] || '아직 없음'} detail={topArtist ? `${topArtist[1]}개 공연 기록` : '첫 공연을 기록해 보세요'} accent /><DashboardMetric icon={<WalletCards />} label="공연당 평균" value={money(averagePaid)} detail={`${year} · ${statScope === 'all' ? '전체 기록' : statScope === 'attended' ? '관람 완료' : '예정 공연'} 기준`} /></div>
 
     <section className="mt-9">
-      <div className="flex flex-wrap items-end justify-between gap-3"><div><p className="text-xs text-black/35">Concert ledger</p><h2 className="mt-1 text-xl font-semibold">공연냠냠</h2></div><div className="flex rounded-full border border-black/10 bg-black/[0.035] p-1">{([['all', '전체'], ['attended', '관람 완료'], ['scheduled', '예정']] as const).map(([value, label]) => <button key={value} onClick={() => setFilter(value)} className={`rounded-full px-3 py-1.5 text-xs transition ${filter === value ? 'bg-[#dfff94] text-black' : 'text-black/45 hover:text-black'}`}>{label}</button>)}</div></div>
+      <div className="flex flex-wrap items-end justify-between gap-3"><div><p className="text-xs text-black/35">Concert ledger</p><h2 className="mt-1 text-xl font-semibold">공연냠냠</h2></div><div className="flex flex-wrap items-center justify-end gap-2"><button type="button" onClick={onBulkEdit} className="flex items-center gap-1.5 rounded-full border border-black/10 bg-white px-3 py-2 text-xs text-black/55 hover:border-[#ff6b61]/40 hover:text-black"><Replace className="size-3.5" />일괄 변경</button><div className="flex rounded-full border border-black/10 bg-black/[0.035] p-1">{([['all', '전체'], ['attended', '관람 완료'], ['scheduled', '예정']] as const).map(([value, label]) => <button key={value} onClick={() => setFilter(value)} className={`rounded-full px-3 py-1.5 text-xs transition ${filter === value ? 'bg-[#dfff94] text-black' : 'text-black/45 hover:text-black'}`}>{label}</button>)}</div></div></div>
       <div className="mt-4 overflow-hidden rounded-[26px] border border-black/10 bg-white/70 shadow-sm">
         <div className="hidden grid-cols-[76px_1fr_150px_120px] gap-4 border-b border-black/10 px-4 py-3 text-[10px] uppercase tracking-wider text-black/35 sm:grid"><span>날짜</span><span>공연</span><span>장소</span><span className="text-right">결제액</span></div>
         {visibleConcerts.length ? visibleConcerts.map((concert) => <button key={concert.id} onClick={() => onSelect(concert)} className="grid w-full grid-cols-[56px_1fr_auto] items-center gap-3 border-b border-black/[0.07] px-3 py-3 text-left last:border-0 hover:bg-[#fff8f4] sm:grid-cols-[60px_1fr_150px_120px] sm:px-4"><span className="text-center"><b className="block text-lg leading-none">{new Date(concert.performanceAt).getDate()}</b><span className="mt-1 block text-[10px] text-black/40">{new Date(concert.performanceAt).getMonth() + 1}월</span></span><span className="flex min-w-0 items-center gap-3"><PosterImage src={concert.posterUrl} title={concert.title} className="size-11 shrink-0 rounded-xl object-cover" /><span className="min-w-0"><b className="block truncate text-sm">{concert.title}</b><span className="mt-1 flex items-center gap-2 text-[11px] text-black/40"><i className={`status-dot ${concert.status}`} />{concert.artists.join(' · ') || '아티스트 미입력'} · {concert.status === 'attended' ? '관람 완료' : '예정'}</span></span></span><span className="hidden truncate text-xs text-black/45 sm:block">{concert.venue}</span><span className="text-right text-xs font-medium text-black/65">{concert.paidAmount == null ? '미입력' : money(concert.paidAmount)}</span></button>) : <div className="p-10 text-center text-sm text-black/35">이 조건에 맞는 공연이 아직 없어요.</div>}

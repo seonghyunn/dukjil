@@ -124,7 +124,7 @@ export function AddConcertDialog({ open, onOpenChange, onSave, concerts }: Props
       paidAmount: draft.paidAmount, status: initialStatusFor(draft.performanceAt), rating: null, reviews: [], posterUrl: '', officialPosterUrl: '', posterSource: 'official',
     }));
     try { await onSave(imported); onOpenChange(false); }
-    catch { setMessage('노션 기록을 저장하지 못했어요. 잠시 후 다시 시도해 주세요.'); }
+    catch (error) { setMessage(error instanceof Error ? `저장하지 못했어요: ${error.message}` : '노션 기록을 저장하지 못했어요. 잠시 후 다시 시도해 주세요.'); }
     finally { setLoading(false); }
   }
 
