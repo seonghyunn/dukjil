@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import DeckGL from '@deck.gl/react';
 import { GreatCircleLayer } from '@deck.gl/geo-layers';
-import { ScatterplotLayer } from '@deck.gl/layers';
+import { PathLayer, ScatterplotLayer } from '@deck.gl/layers';
 import MapGL from 'react-map-gl/maplibre';
 import { LoaderCircle, MapPin, Pause, Play, RotateCcw, Settings2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -75,8 +75,10 @@ export function JourneyMap({ concerts, profile, onProfileChange }: { concerts: C
   const fraction = progress <= 1 ? progress : 2 - progress;
   const destination: [number, number] | null = current ? [current.longitude!, current.latitude!] : null;
   const marker = destination ? interpolateGreatCircle(origin, destination, Math.max(0, Math.min(1, fraction))) : origin;
+  const activePath = destination && progress > 0 && progress < 2 ? journeyTrail(origin, destination, progress) : [];
   const completedCount = reducedMotion ? trips.length : Math.min(trips.length, tripIndex + (progress >= 2 ? 1 : 0));
   const visibleTrips = trips.slice(0, completedCount);
+  const journeyStatus = !current ? '' : progress < 0.92 ? `공연장으로 이동 중 · ${Math.round(progress * 100)}%` : progress <= 1.08 ? `${current.venue} 도착` : `출발지로 돌아가는 중 · ${Math.round((progress - 1) * 100)}%`;
 
   useEffect(() => {
     if (reducedMotion || !playing || !current || !destination) return;
@@ -92,6 +94,7 @@ export function JourneyMap({ concerts, profile, onProfileChange }: { concerts: C
 
   const layers = [
     new GreatCircleLayer({ id: 'journey-arcs', data: visibleTrips, getSourcePosition: () => origin, getTargetPosition: (d: Concert) => [d.longitude!, d.latitude!], getSourceColor: [223, 255, 148, 175], getTargetColor: [255, 107, 97, 220], getWidth: 3, greatCircle: true, pickable: true }),
+    ...(!reducedMotion && activePath.length > 1 ? [new PathLayer({ id: 'active-journey-path', data: [{ path: activePath }], getPath: (d: { path: [number, number][] }) => d.path, getColor: [255, 107, 97, 245], getWidth: 4, widthUnits: 'pixels', capRounded: true, jointRounded: true })] : []),
     new ScatterplotLayer({ id: 'venues', data: visibleTrips, getPosition: (d: Concert) => [d.longitude!, d.latitude!], getRadius: 13000, radiusMinPixels: 4, radiusMaxPixels: 9, getFillColor: [255, 107, 97, 235], stroked: true, getLineColor: [255, 255, 255, 220], lineWidthMinPixels: 1, pickable: true }),
     new ScatterplotLayer({ id: 'origin', data: [{ position: origin }], getPosition: (d: { position: [number, number] }) => d.position, getRadius: 15000, radiusMinPixels: 5, radiusMaxPixels: 10, getFillColor: [223, 255, 148, 255], stroked: true, getLineColor: [20, 20, 18, 255], lineWidthMinPixels: 2 }),
     ...(!reducedMotion && progress > 0 && progress < 2 ? [new ScatterplotLayer({ id: 'traveler', data: [{ position: marker }], getPosition: (d: { position: [number, number] }) => d.position, getRadius: 22000, radiusMinPixels: 7, radiusMaxPixels: 12, getFillColor: [255, 255, 255, 255], stroked: true, getLineColor: [255, 107, 97, 255], lineWidthMinPixels: 3 })] : []),
@@ -135,7 +138,7 @@ export function JourneyMap({ concerts, profile, onProfileChange }: { concerts: C
           <MapGL style={{ width: '100%', height: '100%' }} mapStyle={MAP_STYLE} attributionControl={{ compact: true }} reuseMaps />
         </DeckGL>
         <div className="pointer-events-none absolute left-3 top-3 rounded-full bg-black/65 px-3 py-2 text-[11px] text-white/70 backdrop-blur">출발 · {profile.originName}</div>
-        {playing && current && progress > 0.86 && progress < 1.14 && <div className="absolute inset-x-4 bottom-4 flex items-center gap-3 rounded-2xl bg-black/80 p-3 text-white backdrop-blur"><PosterImage src={current.posterUrl} title={current.title} className="size-12 rounded-xl object-cover" /><div className="min-w-0"><p className="truncate text-sm font-semibold">{current.title}</p><p className="text-xs text-white/45">{current.venue} 도착</p></div></div>}
+        {current && progress > 0 && progress < 2 && <div className="absolute inset-x-4 bottom-4 flex items-center gap-3 rounded-2xl bg-black/80 p-3 text-white shadow-xl backdrop-blur"><PosterImage src={current.posterUrl} title={current.title} className="size-12 rounded-xl object-cover" /><div className="min-w-0"><p className="truncate text-sm font-semibold">{current.title}</p><p className="mt-0.5 truncate text-[11px] text-white/45">{current.venue}</p><p className="mt-1 text-xs font-medium text-[#dfff94]">{journeyStatus}</p></div></div>}
       </div>
       <div className="mt-4 flex items-center justify-center gap-3">
         <Button variant="outline" size="icon-lg" aria-label="처음부터" onClick={restart}><RotateCcw /></Button>
@@ -149,3 +152,17 @@ export function JourneyMap({ concerts, profile, onProfileChange }: { concerts: C
 }
 
 function Stat({ label, value }: { label: string; value: string }) { return <div className="rounded-2xl border border-black/10 bg-white/75 p-3 shadow-sm"><p className="text-[10px] text-black/40">{label}</p><p className="mt-1 truncate text-sm font-semibold">{value}</p></div>; }
+
+function journeyTrail(origin: [number, number], destination: [number, number], progress: number) {
+  const steps = 48;
+  const outboundEnd = Math.min(1, progress);
+  const path: [number, number][] = [];
+  const outboundSteps = Math.max(1, Math.ceil(steps * outboundEnd));
+  for (let index = 0; index <= outboundSteps; index += 1) path.push(interpolateGreatCircle(origin, destination, outboundEnd * index / outboundSteps));
+  if (progress > 1) {
+    const returnProgress = Math.min(1, progress - 1);
+    const returnSteps = Math.max(1, Math.ceil(steps * returnProgress));
+    for (let index = 1; index <= returnSteps; index += 1) path.push(interpolateGreatCircle(origin, destination, 1 - returnProgress * index / returnSteps));
+  }
+  return path;
+}
