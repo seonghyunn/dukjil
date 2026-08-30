@@ -26,7 +26,7 @@ export function AddConcertDialog({ open, onOpenChange, onSave, concerts }: Props
   const [form, setForm] = useState(emptyForm);
   const [status, setStatus] = useState<'scheduled' | 'attended'>('scheduled');
   const [statusOverridden, setStatusOverridden] = useState(false);
-  const [initialRating, setInitialRating] = useState(5);
+  const [initialRating, setInitialRating] = useState<number | null>(null);
   const [coords, setCoords] = useState<GeocodeCandidate | null>(null);
   const [candidates, setCandidates] = useState<GeocodeCandidate[]>([]);
   const [imageFile, setImageFile] = useState<File>();
@@ -42,7 +42,7 @@ export function AddConcertDialog({ open, onOpenChange, onSave, concerts }: Props
 
   useEffect(() => {
     if (!open) {
-      setForm(emptyForm); setStatus('scheduled'); setStatusOverridden(false); setInitialRating(5); setCoords(null); setCandidates([]); setImageFile(undefined); setDateCandidates([]); setSelectedDates([]); setPriceCandidates([]); setMessage('');
+      setForm(emptyForm); setStatus('scheduled'); setStatusOverridden(false); setInitialRating(null); setCoords(null); setCandidates([]); setImageFile(undefined); setDateCandidates([]); setSelectedDates([]); setPriceCandidates([]); setMessage('');
     }
   }, [open]);
 
@@ -118,7 +118,7 @@ export function AddConcertDialog({ open, onOpenChange, onSave, concerts }: Props
       address: form.address.trim(), latitude: coords?.latitude ?? null, longitude: coords?.longitude ?? null,
       countryCode: coords?.countryCode || 'KR', bookingProvider: form.bookingProvider.trim(), sourceUrl: form.sourceUrl.trim(),
       listPrice: form.listPrice === '' ? null : Number(form.listPrice), paidAmount: form.paidAmount === '' ? null : Number(form.paidAmount),
-      status: statusOverridden ? status : initialStatusFor(performanceAt), reviews: form.initialReview.trim() ? [{ id: crypto.randomUUID(), body: form.initialReview.trim(), createdAt: new Date().toISOString(), rating: initialRating }] : [], posterUrl: form.posterUrl.trim(), officialPosterUrl: form.posterUrl.trim(), posterSource: imageFile ? 'upload' : 'official',
+      status: statusOverridden ? status : initialStatusFor(performanceAt), rating: initialRating, reviews: form.initialReview.trim() ? [{ id: crypto.randomUUID(), body: form.initialReview.trim(), createdAt: new Date().toISOString() }] : [], posterUrl: form.posterUrl.trim(), officialPosterUrl: form.posterUrl.trim(), posterSource: imageFile ? 'upload' : 'official',
     }));
     try { await onSave(concerts, imageFile); onOpenChange(false); }
     catch { setMessage('저장하지 못했어요. 잠시 후 다시 시도해 주세요.'); }
@@ -162,7 +162,8 @@ export function AddConcertDialog({ open, onOpenChange, onSave, concerts }: Props
             <Field label="공식 이미지 URL"><Input value={form.posterUrl} onChange={(e) => update('posterUrl', e.target.value)} placeholder="자동 추출 또는 직접 입력" /></Field>
             <label className="flex cursor-pointer items-center gap-3 rounded-2xl border border-dashed border-black/15 p-4 text-sm text-black/60 hover:border-black/30"><ImagePlus className="size-5" /><span>{imageFile?.name || '이미지가 없으면 직접 추가 (최대 5MB)'}</span><input type="file" accept="image/jpeg,image/png,image/webp" className="sr-only" onChange={(e) => setImageFile(e.target.files?.[0])} /></label>
             <div><div className="grid grid-cols-2 gap-2"><Button type="button" variant={(statusOverridden ? status : initialStatusFor(selectedDates[0] || form.performanceAt)) === 'scheduled' ? 'default' : 'outline'} onClick={() => { setStatus('scheduled'); setStatusOverridden(true); }}>예정</Button><Button type="button" variant={(statusOverridden ? status : initialStatusFor(selectedDates[0] || form.performanceAt)) === 'attended' ? 'default' : 'outline'} onClick={() => { setStatus('attended'); setStatusOverridden(true); }}>관람 완료</Button></div><p className="mt-2 text-[11px] text-black/35">공연일이 오늘이거나 지난 경우 관람 완료, 내일부터는 예정으로 자동 설정돼요.</p></div>
-            <Field label="첫 후기 (선택)"><div className="space-y-2"><RatingPicker value={initialRating} onChange={setInitialRating} /><Textarea value={form.initialReview} onChange={(e) => update('initialReview', e.target.value)} maxLength={2000} placeholder="저장 후 댓글처럼 후기를 계속 남길 수 있어요." className="min-h-24" /></div></Field>
+            <Field label="공연 별점 (선택)"><RatingPicker value={initialRating} onChange={setInitialRating} /></Field>
+            <Field label="첫 댓글 (선택)"><Textarea value={form.initialReview} onChange={(e) => update('initialReview', e.target.value)} maxLength={2000} placeholder="별점과 별개로 댓글을 남겨요. 저장 후 여러 개를 더 추가할 수 있어요." className="min-h-24" /></Field>
             {message && <p role="status" className="rounded-xl bg-black/5 p-3 text-xs leading-5 text-[#5d7b27]">{message}</p>}
             <Button type="submit" className="h-12 w-full bg-[#ff6b61] text-[#17120f] hover:bg-[#ff827a]" disabled={loading}>{loading && <LoaderCircle className="animate-spin" />}{selectedDates.length > 1 ? `${selectedDates.length}개 회차 각각 저장하기` : '공연 저장하기'}</Button>
           </form>

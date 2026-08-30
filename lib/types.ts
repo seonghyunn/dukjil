@@ -4,7 +4,6 @@ export type ConcertReview = {
   id: string;
   body: string;
   createdAt: string;
-  rating: number | null;
 };
 
 export type Concert = {
@@ -22,6 +21,7 @@ export type Concert = {
   listPrice: number | null;
   paidAmount: number | null;
   status: ConcertStatus;
+  rating: number | null;
   reviews: ConcertReview[];
   posterUrl: string;
   officialPosterUrl?: string;
