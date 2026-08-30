@@ -120,7 +120,7 @@ export function AddConcertDialog({ open, onOpenChange, onSave, concerts }: Props
     const imported: Concert[] = selected.map((draft) => ({
       id: crypto.randomUUID(), title: draft.title, artists: draft.artists, performanceAt: new Date(draft.performanceAt).toISOString(),
       venue: draft.venue || '장소 미입력', address: draft.venue || '', latitude: null, longitude: null, countryCode: 'KR',
-      bookingProvider: draft.bookingProvider || '노션에서 가져옴', sourceUrl: notionUrl.trim(), listPrice: draft.listPrice,
+      bookingProvider: draft.bookingProvider || '노션에서 가져옴', sourceUrl: '', listPrice: draft.listPrice,
       paidAmount: draft.paidAmount, status: initialStatusFor(draft.performanceAt), rating: null, reviews: draft.reviews || [], posterUrl: '', officialPosterUrl: '', posterSource: 'official',
     }));
     try { await onSave(imported); onOpenChange(false); }

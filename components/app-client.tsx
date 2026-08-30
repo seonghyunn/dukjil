@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import dynamic from 'next/dynamic';
 import type { Session } from '@supabase/supabase-js';
-import { CalendarClock, CalendarDays, ChevronRight, CircleDollarSign, ImagePlus, LogOut, Map as MapIcon, MessageCircle, Plus, Replace, Send, Sparkles, Trash2, Trophy, WalletCards } from 'lucide-react';
+import { CalendarClock, CalendarDays, ChevronRight, CircleDollarSign, ImagePlus, Link2, LoaderCircle, LogOut, Map as MapIcon, MessageCircle, Plus, Replace, Send, Sparkles, Trash2, Trophy, WalletCards, X } from 'lucide-react';
 import { Bar, BarChart, CartesianGrid, Cell, Legend, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { AddConcertDialog } from './add-concert-dialog';
 import { BulkEditDialog } from './bulk-edit-dialog';
@@ -17,7 +17,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
 import { demoConcerts, demoProfile } from '@/lib/demo-data';
 import { isSupabaseConfigured, isTestMode, supabase } from '@/lib/supabase';
-import type { Concert, Profile } from '@/lib/types';
+import type { Concert, ImportDraft, Profile } from '@/lib/types';
 
 type View = 'now' | 'calendar' | 'map';
 const CHART_COLORS = ['#ff6b61', '#b8e96c', '#6c8cff', '#f3b85b', '#a775d2', '#54b9b0', '#ef8db4'];
@@ -277,7 +277,10 @@ function ConcertDetail({ concert, concerts, onOpenChange, onSave, onAddReview, o
   const [comment, setComment] = useState('');
   const [imageFile, setImageFile] = useState<File>();
   const [saving, setSaving] = useState(false);
-  useEffect(() => { setDraft(concert); setImageFile(undefined); }, [concert]);
+  const [urlImporting, setUrlImporting] = useState(false);
+  const [urlMessage, setUrlMessage] = useState('');
+  const [deleteConfirm, setDeleteConfirm] = useState(false);
+  useEffect(() => { setDraft(concert); setImageFile(undefined); setUrlMessage(''); setDeleteConfirm(false); }, [concert]);
   if (!concert || !draft) return null;
   const artistSuggestions = [...new Set(concerts.flatMap((item) => item.artists))].slice(0, 10);
   const venueSuggestions = [...new globalThis.Map(concerts.filter((item) => item.venue).map((item) => [item.venue, item])).values()].slice(0, 8);
@@ -285,7 +288,33 @@ function ConcertDetail({ concert, concerts, onOpenChange, onSave, onAddReview, o
   const update = <K extends keyof Concert>(key: K, value: Concert[K]) => setDraft((current) => current ? { ...current, [key]: value } : current);
   async function saveDetails() { setSaving(true); try { await onSave(draft!, imageFile); setImageFile(undefined); } finally { setSaving(false); } }
   async function postComment() { if (!comment.trim()) return; await onAddReview(concert!, comment); setComment(''); }
-  return <Dialog open onOpenChange={onOpenChange}><DialogContent className="max-h-[92vh] w-[calc(100vw-24px)] max-w-xl overflow-x-hidden overflow-y-auto border-black/10 bg-[#fbfaf6] p-0 text-[#1c1b18]">
+  async function importBookingUrl() {
+    if (!draft?.sourceUrl.trim()) { setUrlMessage('예매 페이지 URL을 입력해 주세요.'); return; }
+    setUrlImporting(true); setUrlMessage('');
+    try {
+      const response = await fetch('/api/import-concert', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ url: draft.sourceUrl.trim() }) });
+      const data = await response.json() as ImportDraft & { error?: string };
+      if (!response.ok) throw new Error(data.error || '예매 페이지 정보를 불러오지 못했어요.');
+      setDraft((current) => current ? {
+        ...current,
+        title: data.title || current.title,
+        artists: data.artists?.length ? data.artists : current.artists,
+        performanceAt: data.dateCandidates?.[0] || current.performanceAt,
+        venue: data.venue || current.venue,
+        address: data.address || current.address,
+        latitude: data.venue || data.address ? null : current.latitude,
+        longitude: data.venue || data.address ? null : current.longitude,
+        bookingProvider: data.bookingProvider || current.bookingProvider,
+        listPrice: data.priceCandidates?.[0] ?? current.listPrice,
+        officialPosterUrl: data.posterUrl || current.officialPosterUrl,
+        posterUrl: current.posterSource === 'official' && data.posterUrl ? data.posterUrl : current.posterUrl,
+      } : current);
+      setUrlMessage(`정보를 덮어썼어요. ${data.dateCandidates?.length > 1 ? `날짜 후보 ${data.dateCandidates.length}개 중 첫 날짜를 적용했어요. ` : ''}아래 내용을 확인한 뒤 ‘상세 정보 저장’을 눌러 주세요.`);
+    } catch (error) { setUrlMessage(error instanceof Error ? error.message : '예매 페이지 정보를 불러오지 못했어요.'); }
+    finally { setUrlImporting(false); }
+  }
+  return <Dialog open onOpenChange={onOpenChange}><DialogContent showCloseButton={false} className="max-h-[92vh] w-[calc(100vw-24px)] max-w-xl overflow-x-hidden overflow-y-auto border-black/10 bg-[#fbfaf6] p-0 text-[#1c1b18]">
+    <div className="pointer-events-none sticky top-0 z-40 flex h-0 justify-end pr-3 pt-3"><button type="button" aria-label="공연 상세 닫기" onClick={() => onOpenChange(false)} className="pointer-events-auto grid size-9 place-items-center rounded-full border border-black/10 bg-[#fffdf8]/95 text-black/55 shadow-md backdrop-blur hover:text-black"><X className="size-4" /></button></div>
     <div className="relative h-44"><PosterImage src={draft.posterUrl} title={draft.title} className="h-full w-full object-cover" /><span className="absolute inset-0 bg-gradient-to-t from-[#fbfaf6] to-transparent" /><span className="absolute bottom-3 right-4 rounded-full bg-black/65 px-3 py-1.5 text-[11px] text-white backdrop-blur">{draft.posterSource === 'upload' ? '직접 업로드 사진' : '공식 이미지'}</span></div>
     <div className="space-y-5 px-5 pb-6">
       <DialogHeader><DialogTitle className="text-xl">공연 상세 편집</DialogTitle><DialogDescription>장부에서 바로 공연 정보와 사진을 수정할 수 있어요.</DialogDescription></DialogHeader>
@@ -299,8 +328,9 @@ function ConcertDetail({ concert, concerts, onOpenChange, onSave, onAddReview, o
         <DetailField label="주소"><Input value={draft.address} onChange={(event) => update('address', event.target.value)} /></DetailField>
         <DetailField label="정가"><Input inputMode="numeric" value={draft.listPrice ?? ''} onChange={(event) => update('listPrice', event.target.value ? Number(event.target.value.replace(/\D/g, '')) : null)} /></DetailField>
         <DetailField label="실제 결제액"><Input inputMode="numeric" value={draft.paidAmount ?? ''} onChange={(event) => update('paidAmount', event.target.value ? Number(event.target.value.replace(/\D/g, '')) : null)} /></DetailField>
-        <DetailField label="예매 URL"><Input value={draft.sourceUrl} onChange={(event) => update('sourceUrl', event.target.value)} /></DetailField>
+        <DetailField label="예매 페이지 URL"><div className="space-y-2"><Input type="url" value={draft.sourceUrl} onChange={(event) => { update('sourceUrl', event.target.value); setUrlMessage(''); }} placeholder="https://ticket..." /><Button type="button" variant="outline" onClick={importBookingUrl} disabled={urlImporting || !draft.sourceUrl.trim()} className="w-full"><Link2 />{urlImporting ? '불러오는 중…' : 'URL 정보로 덮어쓰기'}{urlImporting && <LoaderCircle className="animate-spin" />}</Button></div></DetailField>
       </div>
+      {urlMessage && <output className="block rounded-xl bg-[#f0eee7] p-3 text-xs leading-5 text-[#5d7b27]">{urlMessage}</output>}
       <div><p className="mb-2 text-xs font-medium text-black/50">공연 별점</p><RatingPicker value={draft.rating} onChange={(value) => update('rating', value)} /><p className="mt-2 text-[11px] text-black/35">공연 전체에 하나만 저장되며 언제든 수정할 수 있어요.</p></div>
       <div className="grid grid-cols-2 gap-2"><Button variant={draft.status === 'scheduled' ? 'default' : 'outline'} onClick={() => update('status', 'scheduled')}>예정</Button><Button variant={draft.status === 'attended' ? 'default' : 'outline'} onClick={() => update('status', 'attended')}>관람 완료</Button></div>
       <Button className="h-11 w-full bg-[#1f1d19] text-white hover:bg-black" onClick={saveDetails} disabled={saving}>{saving ? '저장 중…' : '상세 정보 저장'}</Button>
@@ -309,7 +339,7 @@ function ConcertDetail({ concert, concerts, onOpenChange, onSave, onAddReview, o
         <div className="mt-3 min-w-0 space-y-2">{concert.reviews.length ? concert.reviews.map((review) => <article key={review.id} className="group min-w-0 rounded-2xl bg-[#f1eee6] p-3"><div className="flex items-start justify-between gap-3"><p className="break-words whitespace-pre-wrap text-sm leading-6 text-black/75 [overflow-wrap:anywhere]">{review.body}</p><button aria-label="후기 삭제" onClick={() => onDeleteReview(concert, review.id)} className="shrink-0 rounded-full p-1 text-black/20 hover:bg-white hover:text-red-500"><Trash2 className="size-3.5" /></button></div><time className="mt-2 block text-[10px] text-black/30">{new Intl.DateTimeFormat('ko-KR', { month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' }).format(new Date(review.createdAt))}</time></article>) : <p className="rounded-2xl border border-dashed border-black/10 p-5 text-center text-xs text-black/35">첫 댓글을 남겨보세요.</p>}</div>
         <div className="mt-3 flex items-end gap-2"><Textarea value={comment} onChange={(event) => setComment(event.target.value)} maxLength={2000} className="min-h-20 resize-none" placeholder="별점과 별개로 댓글을 여러 개 남길 수 있어요." /><Button size="icon-lg" aria-label="후기 등록" className="shrink-0 bg-[#ff6b61] text-black hover:bg-[#ff827a]" onClick={postComment} disabled={!comment.trim()}><Send /></Button></div>
       </section>
-      <button onClick={() => onDelete(concert)} className="w-full py-1 text-xs text-red-500/65 hover:text-red-600">이 기록 삭제</button>
+      {deleteConfirm ? <div className="rounded-2xl border border-red-200 bg-red-50 p-4"><p className="text-sm font-semibold text-red-700">이 공연 기록을 정말 삭제할까요?</p><p className="mt-1 text-xs leading-5 text-red-600/70">공연 정보와 후기까지 함께 삭제되며 되돌릴 수 없어요.</p><div className="mt-3 grid grid-cols-2 gap-2"><Button type="button" variant="outline" onClick={() => setDeleteConfirm(false)}>취소</Button><Button type="button" onClick={() => onDelete(concert)} className="bg-red-600 text-white hover:bg-red-700"><Trash2 />삭제하기</Button></div></div> : <button type="button" onClick={() => setDeleteConfirm(true)} className="w-full py-1 text-xs text-red-500/65 hover:text-red-600">이 기록 삭제</button>}
     </div>
   </DialogContent></Dialog>;
 }
@@ -329,4 +359,5 @@ function toDateTimeInput(value: string) {
   const get = (type: Intl.DateTimeFormatPartTypes) => parts.find((part) => part.type === type)?.value || '';
   return `${get('year')}-${get('month')}-${get('day')}T${get('hour')}:${get('minute')}`;
 }
-function rowToConcert(row: any, posterUrl: string): Concert { return { id: row.id, title: row.title, artists: (row.concert_artists || []).map((item: any) => item.artists?.name).filter(Boolean), performanceAt: row.performance_at, venue: row.venue, address: row.address || '', latitude: row.latitude, longitude: row.longitude, countryCode: row.country_code || 'KR', bookingProvider: row.booking_provider || '', sourceUrl: row.source_url || '', listPrice: row.list_price, paidAmount: row.paid_amount, status: row.status, rating: row.rating == null ? null : Number(row.rating), reviews: (row.concert_reviews || []).map((review: any) => ({ id: review.id, body: review.body, createdAt: review.created_at })).sort((a: { createdAt: string }, b: { createdAt: string }) => a.createdAt.localeCompare(b.createdAt)), posterUrl, officialPosterUrl: row.official_poster_url || row.poster_url || '', posterSource: row.poster_source || (row.poster_storage_path ? 'upload' : 'official'), posterStoragePath: row.poster_storage_path || undefined }; }
+function rowToConcert(row: any, posterUrl: string): Concert { return { id: row.id, title: row.title, artists: (row.concert_artists || []).map((item: any) => item.artists?.name).filter(Boolean), performanceAt: row.performance_at, venue: row.venue, address: row.address || '', latitude: row.latitude, longitude: row.longitude, countryCode: row.country_code || 'KR', bookingProvider: row.booking_provider || '', sourceUrl: bookingSourceUrl(row.source_url), listPrice: row.list_price, paidAmount: row.paid_amount, status: row.status, rating: row.rating == null ? null : Number(row.rating), reviews: (row.concert_reviews || []).map((review: any) => ({ id: review.id, body: review.body, createdAt: review.created_at })).sort((a: { createdAt: string }, b: { createdAt: string }) => a.createdAt.localeCompare(b.createdAt)), posterUrl, officialPosterUrl: row.official_poster_url || row.poster_url || '', posterSource: row.poster_source || (row.poster_storage_path ? 'upload' : 'official'), posterStoragePath: row.poster_storage_path || undefined }; }
+function bookingSourceUrl(value: unknown) { if (typeof value !== 'string') return ''; try { const host = new URL(value).hostname.toLowerCase(); return host.endsWith('notion.so') || host.endsWith('notion.site') || host === 'app.notion.com' ? '' : value; } catch { return ''; } }
