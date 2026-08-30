@@ -59,3 +59,15 @@ export type ImportDraft = {
   priceCandidates: number[];
   warnings: string[];
 };
+
+export type NotionConcertDraft = {
+  sourceId: string;
+  title: string;
+  artists: string[];
+  performanceAt: string;
+  endDate?: string;
+  venue: string;
+  bookingProvider: string;
+  listPrice: number | null;
+  paidAmount: number | null;
+};
