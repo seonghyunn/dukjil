@@ -13,51 +13,50 @@ const demos = [
   { id: 'zozo', name: 'ZOZO Marine Stadium', address: '1 Mihama, Mihama Ward, Chiba, Japan', latitude: 35.6456, longitude: 140.0308, countryCode: 'JP' },
 ];
 
+type Candidate = { id: string; name: string; address: string; latitude: number; longitude: number; countryCode: string };
+const searchCache = new Map<string, { expiresAt: number; candidates: Candidate[] }>();
+let lastOpenStreetMapRequest = 0;
+
 export async function POST(request: Request) {
   const parsed = schema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return Response.json({ error: '도시, 공연장 또는 주소를 입력해 주세요.' }, { status: 400 });
-  const token = process.env.MAPBOX_ACCESS_TOKEN;
-  if (!token) {
-    const needle = parsed.data.query.toLowerCase();
-    const savedCandidates = demos
-      .filter((item) => `${item.name} ${item.address}`.toLowerCase().includes(needle) || needle.includes(item.name.toLowerCase()))
-      .sort((a, b) => b.name.length - a.name.length);
-    if (savedCandidates.length) return Response.json({ candidates: savedCandidates, provider: 'saved' });
+  const needle = parsed.data.query.toLowerCase();
+  const savedCandidates = demos
+    .filter((item) => `${item.name} ${item.address}`.toLowerCase().includes(needle) || needle.includes(item.name.toLowerCase()))
+    .sort((a, b) => b.name.length - a.name.length);
+  if (savedCandidates.length) return Response.json({ candidates: savedCandidates, provider: 'saved' });
 
-    const fallbackUrl = new URL('https://nominatim.openstreetmap.org/search');
-    fallbackUrl.searchParams.set('q', parsed.data.query);
-    fallbackUrl.searchParams.set('format', 'jsonv2');
-    fallbackUrl.searchParams.set('addressdetails', '1');
-    fallbackUrl.searchParams.set('accept-language', 'ko,en');
-    fallbackUrl.searchParams.set('limit', '5');
-    try {
-      const fallbackResponse = await fetch(fallbackUrl, {
+  const cached = searchCache.get(needle);
+  if (cached && cached.expiresAt > Date.now()) return Response.json({ candidates: cached.candidates, provider: 'openstreetmap-cache' });
+
+  const searchUrl = new URL('https://nominatim.openstreetmap.org/search');
+  searchUrl.searchParams.set('q', parsed.data.query);
+  searchUrl.searchParams.set('format', 'jsonv2');
+  searchUrl.searchParams.set('addressdetails', '1');
+  searchUrl.searchParams.set('accept-language', 'ko,en');
+  searchUrl.searchParams.set('limit', '5');
+  try {
+      const waitMs = Math.max(0, 1000 - (Date.now() - lastOpenStreetMapRequest));
+      if (waitMs) await new Promise((resolve) => setTimeout(resolve, waitMs));
+      lastOpenStreetMapRequest = Date.now();
+      const searchResponse = await fetch(searchUrl, {
         headers: { 'user-agent': 'DukjilLog/1.0 (https://dukjil-log.withgrshsh.chatgpt.site)' },
         signal: AbortSignal.timeout(7000),
       });
-      if (!fallbackResponse.ok) return Response.json({ error: '장소 검색 서비스가 잠시 응답하지 않아요.' }, { status: 502 });
-      const fallbackData = await fallbackResponse.json() as Array<{ place_id: number; osm_type?: string; osm_id?: number; name?: string; display_name: string; lat: string; lon: string; address?: { country_code?: string } }>;
-      return Response.json({ candidates: fallbackData.map((item) => ({
+      if (!searchResponse.ok) return Response.json({ error: '장소 검색 서비스가 잠시 응답하지 않아요.' }, { status: 502 });
+      const data = await searchResponse.json() as Array<{ place_id: number; osm_type?: string; osm_id?: number; name?: string; display_name: string; lat: string; lon: string; address?: { country_code?: string } }>;
+      const candidates = data.map((item) => ({
         id: `osm-${item.osm_type || 'place'}-${item.osm_id || item.place_id}`,
         name: item.name || item.display_name.split(',')[0] || parsed.data.query,
         address: item.display_name,
         latitude: Number(item.lat),
         longitude: Number(item.lon),
         countryCode: (item.address?.country_code || '').toUpperCase(),
-      })).filter((item) => Number.isFinite(item.latitude) && Number.isFinite(item.longitude)), provider: 'openstreetmap' });
-    } catch {
-      return Response.json({ error: '장소 검색 연결이 원활하지 않아요. 잠시 후 다시 시도해 주세요.' }, { status: 502 });
-    }
+      })).filter((item) => Number.isFinite(item.latitude) && Number.isFinite(item.longitude));
+      searchCache.set(needle, { expiresAt: Date.now() + 24 * 60 * 60 * 1000, candidates });
+      if (searchCache.size > 100) searchCache.delete(searchCache.keys().next().value as string);
+      return Response.json({ candidates, provider: 'openstreetmap' });
+  } catch {
+    return Response.json({ error: '장소 검색 연결이 원활하지 않아요. 잠시 후 다시 시도해 주세요.' }, { status: 502 });
   }
-  const url = new URL('https://api.mapbox.com/search/geocode/v6/forward');
-  url.searchParams.set('q', parsed.data.query);
-  url.searchParams.set('limit', '5');
-  url.searchParams.set('language', 'ko,en');
-  url.searchParams.set('types', 'poi,address,place');
-  url.searchParams.set('permanent', 'true');
-  url.searchParams.set('access_token', token);
-  const response = await fetch(url, { signal: AbortSignal.timeout(7000) });
-  if (!response.ok) return Response.json({ error: '장소 검색 서비스가 응답하지 않았어요.' }, { status: 502 });
-  const data = await response.json() as { features?: Array<any> };
-  return Response.json({ candidates: (data.features || []).map((feature) => ({ id: feature.id, name: feature.properties?.name_preferred || feature.properties?.name || feature.text || parsed.data.query, address: feature.properties?.full_address || feature.place_name || feature.properties?.place_formatted || parsed.data.query, longitude: feature.geometry.coordinates[0], latitude: feature.geometry.coordinates[1], countryCode: (feature.properties?.context?.country?.country_code || feature.properties?.country_code || '').toUpperCase() })) });
 }
