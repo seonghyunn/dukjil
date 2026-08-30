@@ -52,8 +52,8 @@ export function AppClient() {
     ]);
     if (rows) {
       const mapped = await Promise.all(rows.map(async (row: any) => {
-        let posterUrl = row.poster_url || '';
-        if (row.poster_storage_path) {
+        let posterUrl = row.official_poster_url || row.poster_url || '';
+        if (row.poster_source === 'upload' && row.poster_storage_path) {
           const { data } = await client.storage.from('posters').createSignedUrl(row.poster_storage_path, 3600);
           if (data?.signedUrl) posterUrl = data.signedUrl;
         }
@@ -69,7 +69,7 @@ export function AppClient() {
   }
 
   async function saveConcert(concert: Concert, imageFile?: File) {
-    if (!supabase || !session?.user) { setConcerts((items) => [...items, { ...concert, posterUrl: imageFile ? URL.createObjectURL(imageFile) : concert.posterUrl }]); return; }
+    if (!supabase || !session?.user) { setConcerts((items) => [...items, { ...concert, posterUrl: imageFile ? URL.createObjectURL(imageFile) : concert.posterUrl, posterSource: imageFile ? 'upload' : 'official' }]); return; }
     let storagePath = '';
     if (imageFile) {
       if (imageFile.size > 5 * 1024 * 1024 || !['image/jpeg', 'image/png', 'image/webp'].includes(imageFile.type)) throw new Error('invalid image');
@@ -77,7 +77,7 @@ export function AppClient() {
       const { error } = await supabase.storage.from('posters').upload(storagePath, imageFile, { upsert: true, contentType: imageFile.type });
       if (error) throw error;
     }
-    const { error } = await supabase.from('concerts').insert({ id: concert.id, user_id: session.user.id, title: concert.title, performance_at: concert.performanceAt, venue: concert.venue, address: concert.address, latitude: concert.latitude, longitude: concert.longitude, country_code: concert.countryCode, booking_provider: concert.bookingProvider, source_url: concert.sourceUrl || null, list_price: concert.listPrice, paid_amount: concert.paidAmount, status: concert.status, review: '', poster_url: concert.posterUrl || null, poster_storage_path: storagePath || null });
+    const { error } = await supabase.from('concerts').insert({ id: concert.id, user_id: session.user.id, title: concert.title, performance_at: concert.performanceAt, venue: concert.venue, address: concert.address, latitude: concert.latitude, longitude: concert.longitude, country_code: concert.countryCode, booking_provider: concert.bookingProvider, source_url: concert.sourceUrl || null, list_price: concert.listPrice, paid_amount: concert.paidAmount, status: concert.status, review: '', poster_url: concert.officialPosterUrl || concert.posterUrl || null, official_poster_url: concert.officialPosterUrl || concert.posterUrl || null, poster_source: imageFile ? 'upload' : 'official', poster_storage_path: storagePath || null });
     if (error) throw error;
     for (const name of concert.artists) {
       let { data: artist } = await supabase.from('artists').select('id').eq('name', name).maybeSingle();
@@ -99,7 +99,7 @@ export function AppClient() {
 
   async function updateConcert(next: Concert, imageFile?: File) {
     let posterUrl = next.posterUrl;
-    let posterStoragePath = next.posterStoragePath;
+    let posterStoragePath = next.posterSource === 'official' ? undefined : next.posterStoragePath;
     if (imageFile) {
       if (imageFile.size > 5 * 1024 * 1024 || !['image/jpeg', 'image/png', 'image/webp'].includes(imageFile.type)) throw new Error('invalid image');
       if (supabase && session?.user) {
@@ -110,10 +110,10 @@ export function AppClient() {
         posterUrl = data?.signedUrl || posterUrl;
       } else posterUrl = URL.createObjectURL(imageFile);
     }
-    const saved = { ...next, posterUrl, posterStoragePath };
+    const saved = { ...next, posterUrl: next.posterSource === 'official' ? next.officialPosterUrl || '' : posterUrl, posterSource: imageFile ? 'upload' as const : next.posterSource, posterStoragePath };
     setConcerts((items) => items.map((item) => item.id === saved.id ? saved : item)); setSelected(saved);
     if (supabase && session?.user) {
-      const { error } = await supabase.from('concerts').update({ title: saved.title, performance_at: saved.performanceAt, venue: saved.venue, address: saved.address, latitude: saved.latitude, longitude: saved.longitude, country_code: saved.countryCode, booking_provider: saved.bookingProvider, source_url: saved.sourceUrl || null, list_price: saved.listPrice, paid_amount: saved.paidAmount, status: saved.status, poster_url: saved.posterStoragePath ? null : saved.posterUrl || null, poster_storage_path: saved.posterStoragePath || null }).eq('id', saved.id);
+      const { error } = await supabase.from('concerts').update({ title: saved.title, performance_at: saved.performanceAt, venue: saved.venue, address: saved.address, latitude: saved.latitude, longitude: saved.longitude, country_code: saved.countryCode, booking_provider: saved.bookingProvider, source_url: saved.sourceUrl || null, list_price: saved.listPrice, paid_amount: saved.paidAmount, status: saved.status, poster_url: saved.officialPosterUrl || null, official_poster_url: saved.officialPosterUrl || null, poster_source: saved.posterSource || 'official', poster_storage_path: saved.posterStoragePath || null }).eq('id', saved.id);
       if (error) throw error;
       await supabase.from('concert_artists').delete().eq('concert_id', saved.id);
       for (const name of saved.artists) {
@@ -243,9 +243,10 @@ function ConcertDetail({ concert, onOpenChange, onSave, onAddReview, onDeleteRev
   async function saveDetails() { setSaving(true); try { await onSave(draft!, imageFile); setImageFile(undefined); } finally { setSaving(false); } }
   async function postComment() { if (!comment.trim()) return; await onAddReview(concert!, comment); setComment(''); }
   return <Dialog open onOpenChange={onOpenChange}><DialogContent className="max-h-[92vh] overflow-y-auto border-black/10 bg-[#fbfaf6] p-0 text-[#1c1b18] sm:max-w-xl">
-    <div className="relative h-44"><PosterImage src={draft.posterUrl} title={draft.title} className="h-full w-full object-cover" /><span className="absolute inset-0 bg-gradient-to-t from-[#fbfaf6] to-transparent" /><label className="absolute bottom-3 right-4 flex cursor-pointer items-center gap-2 rounded-full bg-white/90 px-3 py-2 text-xs font-medium shadow-sm"><ImagePlus className="size-4" />{imageFile?.name || '사진 바꾸기'}<input type="file" accept="image/jpeg,image/png,image/webp" className="sr-only" onChange={(event) => setImageFile(event.target.files?.[0])} /></label></div>
+    <div className="relative h-44"><PosterImage src={draft.posterUrl} title={draft.title} className="h-full w-full object-cover" /><span className="absolute inset-0 bg-gradient-to-t from-[#fbfaf6] to-transparent" /><span className="absolute bottom-3 right-4 rounded-full bg-black/65 px-3 py-1.5 text-[11px] text-white backdrop-blur">{draft.posterSource === 'upload' ? '직접 업로드 사진' : '공식 이미지'}</span></div>
     <div className="space-y-5 px-5 pb-6">
       <DialogHeader><DialogTitle className="text-xl">공연 상세 편집</DialogTitle><DialogDescription>장부에서 바로 공연 정보와 사진을 수정할 수 있어요.</DialogDescription></DialogHeader>
+      <div><p className="mb-2 text-xs font-medium text-black/50">대표 사진 선택</p><div className="grid grid-cols-2 gap-2"><Button type="button" variant={draft.posterSource !== 'upload' ? 'default' : 'outline'} disabled={!draft.officialPosterUrl} onClick={() => { setImageFile(undefined); setDraft((current) => current ? { ...current, posterSource: 'official', posterUrl: current.officialPosterUrl || '', posterStoragePath: undefined } : current); }}>공식 이미지</Button><label className={`flex h-9 cursor-pointer items-center justify-center gap-2 rounded-md border text-sm font-medium transition ${draft.posterSource === 'upload' ? 'border-transparent bg-[#1f1d19] text-white' : 'border-black/15 bg-white hover:bg-black/[0.04]'}`}><ImagePlus className="size-4" />{imageFile?.name ? '사진 선택됨' : '직접 업로드'}<input type="file" accept="image/jpeg,image/png,image/webp" className="sr-only" onChange={(event) => { const file = event.target.files?.[0]; if (!file) return; setImageFile(file); setDraft((current) => current ? { ...current, posterSource: 'upload', posterUrl: URL.createObjectURL(file) } : current); }} /></label></div>{!draft.officialPosterUrl && <p className="mt-2 text-[11px] text-black/35">불러온 공식 이미지가 없어 공식 이미지 선택을 사용할 수 없어요.</p>}</div>
       <div className="grid gap-3 sm:grid-cols-2">
         <DetailField label="공연명"><Input value={draft.title} onChange={(event) => update('title', event.target.value)} /></DetailField>
         <DetailField label="아티스트"><Input value={draft.artists.join(', ')} onChange={(event) => update('artists', event.target.value.split(',').map((value) => value.trim()).filter(Boolean))} placeholder="쉼표로 구분" /></DetailField>
@@ -255,7 +256,6 @@ function ConcertDetail({ concert, onOpenChange, onSave, onAddReview, onDeleteRev
         <DetailField label="주소"><Input value={draft.address} onChange={(event) => update('address', event.target.value)} /></DetailField>
         <DetailField label="정가"><Input inputMode="numeric" value={draft.listPrice ?? ''} onChange={(event) => update('listPrice', event.target.value ? Number(event.target.value.replace(/\D/g, '')) : null)} /></DetailField>
         <DetailField label="실제 결제액"><Input inputMode="numeric" value={draft.paidAmount ?? ''} onChange={(event) => update('paidAmount', event.target.value ? Number(event.target.value.replace(/\D/g, '')) : null)} /></DetailField>
-        <DetailField label="공식 이미지 URL"><Input value={draft.posterUrl} onChange={(event) => update('posterUrl', event.target.value)} /></DetailField>
         <DetailField label="예매 URL"><Input value={draft.sourceUrl} onChange={(event) => update('sourceUrl', event.target.value)} /></DetailField>
       </div>
       <div className="grid grid-cols-2 gap-2"><Button variant={draft.status === 'scheduled' ? 'default' : 'outline'} onClick={() => update('status', 'scheduled')}>예정</Button><Button variant={draft.status === 'attended' ? 'default' : 'outline'} onClick={() => update('status', 'attended')}>관람 완료</Button></div>
@@ -284,4 +284,4 @@ function toDateTimeInput(value: string) {
   const get = (type: Intl.DateTimeFormatPartTypes) => parts.find((part) => part.type === type)?.value || '';
   return `${get('year')}-${get('month')}-${get('day')}T${get('hour')}:${get('minute')}`;
 }
-function rowToConcert(row: any, posterUrl: string): Concert { return { id: row.id, title: row.title, artists: (row.concert_artists || []).map((item: any) => item.artists?.name).filter(Boolean), performanceAt: row.performance_at, venue: row.venue, address: row.address || '', latitude: row.latitude, longitude: row.longitude, countryCode: row.country_code || 'KR', bookingProvider: row.booking_provider || '', sourceUrl: row.source_url || '', listPrice: row.list_price, paidAmount: row.paid_amount, status: row.status, reviews: (row.concert_reviews || []).map((review: any) => ({ id: review.id, body: review.body, createdAt: review.created_at })).sort((a: { createdAt: string }, b: { createdAt: string }) => a.createdAt.localeCompare(b.createdAt)), posterUrl, posterStoragePath: row.poster_storage_path || undefined }; }
+function rowToConcert(row: any, posterUrl: string): Concert { return { id: row.id, title: row.title, artists: (row.concert_artists || []).map((item: any) => item.artists?.name).filter(Boolean), performanceAt: row.performance_at, venue: row.venue, address: row.address || '', latitude: row.latitude, longitude: row.longitude, countryCode: row.country_code || 'KR', bookingProvider: row.booking_provider || '', sourceUrl: row.source_url || '', listPrice: row.list_price, paidAmount: row.paid_amount, status: row.status, reviews: (row.concert_reviews || []).map((review: any) => ({ id: review.id, body: review.body, createdAt: review.created_at })).sort((a: { createdAt: string }, b: { createdAt: string }) => a.createdAt.localeCompare(b.createdAt)), posterUrl, officialPosterUrl: row.official_poster_url || row.poster_url || '', posterSource: row.poster_source || (row.poster_storage_path ? 'upload' : 'official'), posterStoragePath: row.poster_storage_path || undefined }; }

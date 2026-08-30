@@ -79,25 +79,29 @@ function getNolGoodsCode(url: URL) {
 
 async function importNolConcert(goodsCode: string, sourceUrl: URL, signal: AbortSignal) {
   const referer = sourceUrl.toString();
-  const summary = await fetchNolJson(`/v1/goods/${goodsCode}/summary?passCode=&seatGrade=&priceGrade=`, referer, signal);
-  const goods = summary?.data;
+  const [summary, playMetadata] = await Promise.all([
+    fetchNolJson(`/v1/goods/${goodsCode}/summary?passCode=&seatGrade=&priceGrade=`, referer, signal).catch(() => null),
+    fetchNolPlayMetadata(goodsCode, signal).catch(() => null),
+  ]);
+  const goods = summary?.data?.goodsName ? summary.data : playMetadata;
   if (!goods?.goodsName) throw new Error('NOL summary unavailable');
 
-  const [place, priceGroups] = await Promise.all([
+  const [place, priceGroups, info] = await Promise.all([
     goods.placeCode
       ? fetchNolJson(`/v1/Place/${encodeURIComponent(goods.placeCode)}`, referer, signal).catch(() => null)
       : Promise.resolve(null),
     fetchNolJson(`/v1/goods/${goodsCode}/prices/group`, referer, signal).catch(() => null),
+    fetchNolJson(`/v1/goods/${goodsCode}/tab/info?goodsCode=${goodsCode}&topingInclude=false`, referer, signal).catch(() => null),
   ]);
   const dateCandidates = parseNolDates(goods.playTime, goods.playStartDate, goods.playEndDate);
-  const priceCandidates = collectNolPrices(priceGroups, goods);
-  const artists = inferNolArtists(goods.goodsName);
+  const priceCandidates = collectNolPrices(priceGroups, goods, info?.data);
+  const artists = collectNolArtists(info?.data, goods.goodsName);
   const posterUrl = absoluteHttpsUrl(goods.goodsLargeImageUrl || goods.goodsSmallImageUrl);
   const warnings: string[] = [];
   if (!artists.length) warnings.push('아티스트를 직접 확인해 주세요.');
   if (dateCandidates.length > 1) warnings.push('공연 회차를 선택해 주세요.');
   if (!dateCandidates.length) warnings.push('관람 회차를 직접 입력해 주세요.');
-  if (!priceCandidates.length) warnings.push('티켓 가격을 직접 확인해 주세요.');
+  if (!priceCandidates.length) warnings.push('NOL 페이지에서 가격을 텍스트로 제공하지 않아 티켓 가격을 직접 확인해 주세요.');
 
   return {
     title: decode(goods.goodsName),
@@ -111,6 +115,22 @@ async function importNolConcert(goodsCode: string, sourceUrl: URL, signal: Abort
     priceCandidates,
     warnings,
   };
+}
+
+async function fetchNolPlayMetadata(goodsCode: string, signal: AbortSignal) {
+  const meta = await fetchNolJson(`/v1/meta/${goodsCode}/performance?goodsCode=${goodsCode}`, `https://tickets.interpark.com/goods/${goodsCode}`, signal);
+  const slug = meta?.data?.slug;
+  if (!slug) return null;
+  const response = await fetch(`https://mobileticket.interpark.com/play/performance/${encodeURIComponent(slug)}`, { signal, headers: { accept: 'text/html', 'user-agent': 'Mozilla/5.0 (compatible; DukjilLog/1.0; +concert metadata import)' } });
+  if (!response.ok || !(response.headers.get('content-type') || '').includes('text/html')) return null;
+  const html = (await response.text()).slice(0, 1_500_000);
+  const metaValue = (property: string) => decode(matchFirst(html, new RegExp(`<meta[^>]+(?:property|name)=["']${escapeRegex(property)}["'][^>]+content=["']([^"']+)["']`, 'i')) || matchFirst(html, new RegExp(`<meta[^>]+content=["']([^"']+)["'][^>]+(?:property|name)=["']${escapeRegex(property)}["']`, 'i')));
+  const title = metaValue('og:title').replace(/^NOL 티켓\s*\|\s*/, '') || decode(matchFirst(html, /<title[^>]*>([^<]+)<\/title>/i));
+  const venue = decode(matchFirst(html, /\\"venueName\\":\\"([^"\\]+)\\"/i) || matchFirst(html, /<span[^>]*>([^<]+)<\/span><\/li><li><span>20\d{2}[.\/-]/i));
+  const start = matchFirst(html, /\\"performStartDate\\":\\"(20\d{2}-\d{2}-\d{2})\\"/i);
+  const end = matchFirst(html, /\\"performEndDate\\":\\"(20\d{2}-\d{2}-\d{2})\\"/i);
+  const placeCode = matchFirst(html, /\\"ticket2000PlaceCode\\":\\"([^"\\]+)\\"/i);
+  return { goodsName: title, placeName: venue, placeCode, playStartDate: start, playEndDate: end, goodsLargeImageUrl: metaValue('og:image') };
 }
 
 async function fetchNolJson(path: string, referer: string, signal: AbortSignal) {
@@ -142,7 +162,9 @@ function parseNolDates(playTime: unknown, startDate: unknown, endDate: unknown) 
     return `${match[1]}-${match[2].padStart(2, '0')}-${match[3].padStart(2, '0')}T${String(hour).padStart(2, '0')}:${match[5]}:00+09:00`;
   });
   if (dates.length) return [...new Set(dates)];
-  return [...new Set([startDate, endDate].map(String).filter((value) => /^20\d{6}$/.test(value)).map((value) => `${value.slice(0, 4)}-${value.slice(4, 6)}-${value.slice(6, 8)}T00:00:00+09:00`))];
+  const normalize = (value: unknown) => { const text = String(value || ''); return /^20\d{6}$/.test(text) ? `${text.slice(0, 4)}-${text.slice(4, 6)}-${text.slice(6, 8)}` : /^20\d{2}-\d{2}-\d{2}$/.test(text) ? text : ''; };
+  const start = normalize(startDate); const end = normalize(endDate);
+  return start && end ? expandKoreanDateRange(start, end) : [...new Set([start, end].filter(Boolean).map((value) => `${value}T00:00:00+09:00`))];
 }
 
 function inferNolArtists(title: unknown) {
@@ -151,7 +173,18 @@ function inferNolArtists(title: unknown) {
   return beforeYear ? [beforeYear] : [];
 }
 
-function collectNolPrices(priceGroups: any, goods: any) {
+function collectNolArtists(info: unknown, title: unknown) {
+  const values: string[] = [];
+  const visit = (value: unknown, key = '') => {
+    if (typeof value === 'string' && /manName|artistName|performerName|castName/i.test(key) && value.trim()) values.push(decode(value));
+    else if (Array.isArray(value)) value.forEach((item) => visit(item, key));
+    else if (value && typeof value === 'object') Object.entries(value).forEach(([childKey, child]) => visit(child, childKey));
+  };
+  visit(info);
+  return [...new Set(values.length ? values : inferNolArtists(title))].slice(0, 20);
+}
+
+function collectNolPrices(priceGroups: any, goods: any, info?: unknown) {
   const values: number[] = [];
   const visit = (value: unknown, key = '') => {
     if (typeof value === 'number' && /price/i.test(key)) values.push(value);
@@ -162,6 +195,7 @@ function collectNolPrices(priceGroups: any, goods: any) {
   };
   visit(priceGroups);
   visit({ minPrice: goods.minSalesPrice, maxPrice: goods.maxSalesPrice, basicPrice: goods.basicPriceHtml });
+  visit(info);
   return [...new Set(values.filter((value) => value >= 1000 && value <= 10_000_000))].sort((a, b) => a - b).slice(0, 8);
 }
 

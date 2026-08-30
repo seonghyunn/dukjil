@@ -5,7 +5,6 @@ import DeckGL from '@deck.gl/react';
 import { GreatCircleLayer } from '@deck.gl/geo-layers';
 import { ScatterplotLayer } from '@deck.gl/layers';
 import MapGL from 'react-map-gl/maplibre';
-import type { StyleSpecification } from 'maplibre-gl';
 import { MapPin, Pause, Play, RotateCcw, Settings2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -15,20 +14,7 @@ import { PosterImage } from './poster-image';
 import 'maplibre-gl/dist/maplibre-gl.css';
 
 type Period = 'month' | 'year' | 'all';
-
-const OSM_STYLE: StyleSpecification = {
-  version: 8,
-  sources: {
-    osm: {
-      type: 'raster',
-      tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
-      tileSize: 256,
-      attribution: '© OpenStreetMap contributors',
-      maxzoom: 19,
-    },
-  },
-  layers: [{ id: 'osm-base', type: 'raster', source: 'osm', minzoom: 0, maxzoom: 22 }],
-};
+const MAP_STYLE = 'https://tiles.openfreemap.org/styles/liberty';
 
 export function JourneyMap({ concerts, profile, onProfileChange }: { concerts: Concert[]; profile: Profile; onProfileChange: (profile: Profile) => Promise<void> }) {
   const [period, setPeriod] = useState<Period>('all');
@@ -115,9 +101,9 @@ export function JourneyMap({ concerts, profile, onProfileChange }: { concerts: C
       </div>
       <div className="mt-4 grid grid-cols-3 gap-1 rounded-2xl bg-black/[0.045] p-1.5">{([['month', '이번 달'], ['year', '올해'], ['all', '전체']] as const).map(([value, label]) => <button key={value} onClick={() => setPeriod(value)} className={`rounded-xl py-2 text-xs ${period === value ? 'bg-white text-black shadow-sm' : 'text-black/45'}`}>{label}</button>)}</div>
       {editingOrigin && <div className="mt-4 rounded-3xl border border-black/10 bg-white/80 p-4 shadow-sm"><p className="text-xs text-black/50">모든 공연의 왕복 기준점</p><div className="mt-2 flex gap-2"><Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="도시 또는 주소" className="h-10" /><Button onClick={searchOrigin}>찾기</Button></div>{candidates.length > 0 && <div className="mt-3 space-y-1">{candidates.map((candidate) => <button key={candidate.id} onClick={() => chooseOrigin(candidate)} className="flex w-full gap-2 rounded-xl p-2 text-left text-xs hover:bg-black/5"><MapPin className="size-4 shrink-0 text-[#d94d44]" /><span><b className="block">{candidate.name}</b><span className="text-black/45">{candidate.address}</span></span></button>)}</div>}</div>}
-      <div className="relative mt-4 h-[430px] overflow-hidden rounded-[30px] border border-black/10 bg-[#dfe8e5] shadow-sm">
+      <div className="relative mt-4 h-[430px] overflow-hidden rounded-[30px] border border-black/10 bg-[#e6ece7] shadow-[0_18px_50px_rgba(75,66,47,.14)]">
         <DeckGL style={{ position: 'absolute', inset: '0px' }} initialViewState={{ longitude: 128.5, latitude: 34.8, zoom: trips.some((trip) => trip.countryCode !== 'KR') ? 3.1 : 5.5, pitch: 20, bearing: 0 }} controller layers={layers} getTooltip={({ object }) => object?.title ? { text: `${object.title}\n${object.venue}` } : null}>
-          <MapGL style={{ width: '100%', height: '100%' }} mapStyle={OSM_STYLE} attributionControl={{ compact: true }} reuseMaps />
+          <MapGL style={{ width: '100%', height: '100%' }} mapStyle={MAP_STYLE} attributionControl={{ compact: true }} reuseMaps />
         </DeckGL>
         <div className="pointer-events-none absolute left-3 top-3 rounded-full bg-black/65 px-3 py-2 text-[11px] text-white/70 backdrop-blur">출발 · {profile.originName}</div>
         {playing && current && progress > 0.86 && progress < 1.14 && <div className="absolute inset-x-4 bottom-4 flex items-center gap-3 rounded-2xl bg-black/80 p-3 text-white backdrop-blur"><PosterImage src={current.posterUrl} title={current.title} className="size-12 rounded-xl object-cover" /><div className="min-w-0"><p className="truncate text-sm font-semibold">{current.title}</p><p className="text-xs text-white/45">{current.venue} 도착</p></div></div>}

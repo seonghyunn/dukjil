@@ -23,6 +23,8 @@ export type Concert = {
   status: ConcertStatus;
   reviews: ConcertReview[];
   posterUrl: string;
+  officialPosterUrl?: string;
+  posterSource?: 'official' | 'upload';
   posterStoragePath?: string;
 };
 

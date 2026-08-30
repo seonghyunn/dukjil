@@ -63,6 +63,7 @@ export function AddConcertDialog({ open, onOpenChange, onSave }: Props) {
       setPriceCandidates(data.priceCandidates || []);
       setMessage(data.warnings.join(' ') || '정보를 불러왔어요. 날짜와 가격을 꼭 확인해 주세요.');
       setMode('direct');
+      if (data.venue || data.address) void resolveVenue(data.venue, data.address);
     } catch (error) {
       setMessage(error instanceof Error ? `${error.message} 직접 입력으로 이어갈게요.` : '직접 입력으로 이어갈게요.');
       setMode('direct');
@@ -70,7 +71,7 @@ export function AddConcertDialog({ open, onOpenChange, onSave }: Props) {
   }
 
   async function findVenue() {
-    const query = form.address || form.venue;
+    const query = venueSearchQuery(form.venue, form.address);
     if (!query) return;
     setLoading(true);
     try {
@@ -81,6 +82,18 @@ export function AddConcertDialog({ open, onOpenChange, onSave }: Props) {
       if (data.candidates?.length === 1) setCoords(data.candidates[0]);
     } catch (error) { setMessage(error instanceof Error ? error.message : '장소를 찾지 못했어요.'); }
     finally { setLoading(false); }
+  }
+
+  async function resolveVenue(venue: string, address: string) {
+    const query = venueSearchQuery(venue, address);
+    if (!query) return;
+    try {
+      const response = await fetch('/api/geocode', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ query }) });
+      const data = await response.json() as { candidates?: GeocodeCandidate[] };
+      const next = data.candidates?.[0];
+      setCandidates(data.candidates || []);
+      if (next) { setCoords(next); setForm((current) => ({ ...current, address: next.address })); }
+    } catch { /* 사용자가 직접 위치를 확인할 수 있도록 폼을 유지해요. */ }
   }
 
   async function submit(event: React.FormEvent) {
@@ -97,7 +110,7 @@ export function AddConcertDialog({ open, onOpenChange, onSave }: Props) {
       address: form.address.trim(), latitude: coords?.latitude ?? null, longitude: coords?.longitude ?? null,
       countryCode: coords?.countryCode || 'KR', bookingProvider: form.bookingProvider.trim(), sourceUrl: form.sourceUrl.trim(),
       listPrice: form.listPrice === '' ? null : Number(form.listPrice), paidAmount: form.paidAmount === '' ? null : Number(form.paidAmount),
-      status, reviews: form.initialReview.trim() ? [{ id: crypto.randomUUID(), body: form.initialReview.trim(), createdAt: new Date().toISOString() }] : [], posterUrl: form.posterUrl.trim(),
+      status, reviews: form.initialReview.trim() ? [{ id: crypto.randomUUID(), body: form.initialReview.trim(), createdAt: new Date().toISOString() }] : [], posterUrl: form.posterUrl.trim(), officialPosterUrl: form.posterUrl.trim(), posterSource: imageFile ? 'upload' : 'official',
     }));
     try { await onSave(concerts, imageFile); onOpenChange(false); }
     catch { setMessage('저장하지 못했어요. 잠시 후 다시 시도해 주세요.'); }
@@ -165,4 +178,12 @@ function toDateTimeInput(value: string) {
   const parts = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false }).formatToParts(date);
   const get = (type: Intl.DateTimeFormatPartTypes) => parts.find((part) => part.type === type)?.value || '';
   return `${get('year')}-${get('month')}-${get('day')}T${get('hour')}:${get('minute')}`;
+}
+
+function venueSearchQuery(venue: string, address: string) {
+  const combined = `${venue} ${address}`.trim();
+  const knownName = ['올림픽홀', 'KSPO DOME', '인스파이어 아레나', '고척스카이돔', '잠실실내체육관'].find((name) => combined.toLowerCase().includes(name.toLowerCase()));
+  if (knownName) return knownName;
+  const inside = combined.match(/(?:내|內)\s*([^,()]+?(?:홀|아레나|돔|스타디움|체육관|극장|공연장|센터))/)?.[1];
+  return (inside || venue || address).replace(/\([^)]*\)/g, ' ').replace(/\s+/g, ' ').trim();
 }
