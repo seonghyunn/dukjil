@@ -1,11 +1,12 @@
 import type { Concert, Profile } from './types';
 
 export const demoProfile: Profile = {
-  originName: '서울',
-  originAddress: '서울특별시 중구',
-  originLatitude: 37.5665,
-  originLongitude: 126.978,
-  originCountryCode: 'KR',
+  originConfigured: false,
+  originName: '',
+  originAddress: '',
+  originLatitude: 0,
+  originLongitude: 0,
+  originCountryCode: '',
 };
 
 export const demoConcerts: Concert[] = [

@@ -48,6 +48,12 @@
   --radius-4xl: calc(var(--radius) * 2.6);
 }
 
+@layer components {
+  .suggestion-chip {
+    @apply max-w-full truncate rounded-full border border-black/10 bg-white px-3 py-1.5 text-xs text-black/60 transition hover:border-black/20 hover:text-black;
+  }
+}
+
 body {
   font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
   min-width: 320px;

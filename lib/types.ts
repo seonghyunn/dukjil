@@ -30,6 +30,7 @@ export type Concert = {
 };
 
 export type Profile = {
+  originConfigured: boolean;
   originName: string;
   originAddress: string;
   originLatitude: number;

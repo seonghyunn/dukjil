@@ -13,6 +13,7 @@ type Props = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSave: (concerts: Concert[], imageFile?: File) => Promise<void>;
+  concerts: Concert[];
 };
 
 const emptyForm = {
@@ -20,7 +21,7 @@ const emptyForm = {
   bookingProvider: '직접 입력', sourceUrl: '', listPrice: '', paidAmount: '', initialReview: '', posterUrl: '',
 };
 
-export function AddConcertDialog({ open, onOpenChange, onSave }: Props) {
+export function AddConcertDialog({ open, onOpenChange, onSave, concerts }: Props) {
   const [mode, setMode] = useState<'url' | 'direct'>('url');
   const [form, setForm] = useState(emptyForm);
   const [status, setStatus] = useState<'scheduled' | 'attended'>('scheduled');
@@ -34,6 +35,9 @@ export function AddConcertDialog({ open, onOpenChange, onSave }: Props) {
   const [priceCandidates, setPriceCandidates] = useState<number[]>([]);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
+  const artistSuggestions = [...new Set(concerts.flatMap((concert) => concert.artists))].sort((a, b) => a.localeCompare(b, 'ko')).slice(0, 10);
+  const venueSuggestions = [...new Map(concerts.filter((concert) => concert.venue).map((concert) => [concert.venue, concert])).values()].slice(0, 8);
+  const providerSuggestions = [...new Set(concerts.map((concert) => concert.bookingProvider).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'ko')).slice(0, 8);
 
   useEffect(() => {
     if (!open) {
@@ -153,6 +157,11 @@ export function AddConcertDialog({ open, onOpenChange, onSave }: Props) {
               <Field label="정가"><Input inputMode="numeric" value={form.listPrice} onChange={(e) => update('listPrice', e.target.value.replace(/\D/g, ''))} placeholder="원" /></Field>
               <Field label="실제 결제액"><Input inputMode="numeric" value={form.paidAmount} onChange={(e) => update('paidAmount', e.target.value.replace(/\D/g, ''))} placeholder="원" /></Field>
             </div>
+            {(artistSuggestions.length > 0 || venueSuggestions.length > 0 || providerSuggestions.length > 0) && <div className="space-y-3 rounded-2xl bg-black/[0.035] p-3">
+              {artistSuggestions.length > 0 && <SuggestionRow label="기록한 아티스트">{artistSuggestions.map((artist) => <button key={artist} type="button" onClick={() => { const current = form.artists.split(',').map((value) => value.trim()).filter(Boolean); if (!current.includes(artist)) update('artists', [...current, artist].join(', ')); }} className="suggestion-chip">{artist}</button>)}</SuggestionRow>}
+              {venueSuggestions.length > 0 && <SuggestionRow label="기록한 공연장">{venueSuggestions.map((concert) => <button key={concert.venue} type="button" onClick={() => { update('venue', concert.venue); update('address', concert.address); setCoords(concert.latitude == null || concert.longitude == null ? null : { id: `saved-${concert.id}`, name: concert.venue, address: concert.address, latitude: concert.latitude, longitude: concert.longitude, countryCode: concert.countryCode }); }} className="suggestion-chip">{concert.venue}</button>)}</SuggestionRow>}
+              {providerSuggestions.length > 0 && <SuggestionRow label="기록한 예매처">{providerSuggestions.map((provider) => <button key={provider} type="button" onClick={() => update('bookingProvider', provider)} className="suggestion-chip">{provider}</button>)}</SuggestionRow>}
+            </div>}
             {candidates.length > 0 && <div className="space-y-2 rounded-2xl bg-black/5 p-3">{candidates.map((candidate) => <button key={candidate.id} type="button" onClick={() => { setCoords(candidate); update('address', candidate.address); }} className={`flex w-full items-start gap-2 rounded-xl p-2 text-left text-xs ${coords?.id === candidate.id ? 'bg-[#dfff94] text-black' : 'hover:bg-black/5'}`}><MapPin className="mt-0.5 size-4 shrink-0" /><span><b className="block">{candidate.name}</b>{candidate.address}</span></button>)}</div>}
             <Field label="공식 이미지 URL"><Input value={form.posterUrl} onChange={(e) => update('posterUrl', e.target.value)} placeholder="자동 추출 또는 직접 입력" /></Field>
             <label className="flex cursor-pointer items-center gap-3 rounded-2xl border border-dashed border-black/15 p-4 text-sm text-black/60 hover:border-black/30"><ImagePlus className="size-5" /><span>{imageFile?.name || '이미지가 없으면 직접 추가 (최대 5MB)'}</span><input type="file" accept="image/jpeg,image/png,image/webp" className="sr-only" onChange={(e) => setImageFile(e.target.files?.[0])} /></label>
@@ -174,6 +183,10 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 
 function CandidateGroup({ label, children }: { label: string; children: React.ReactNode }) {
   return <fieldset className="rounded-2xl bg-black/5 p-3"><legend className="px-1 text-xs text-black/50">{label}</legend><div className="mt-1 flex flex-wrap gap-2">{children}</div></fieldset>;
+}
+
+function SuggestionRow({ label, children }: { label: string; children: React.ReactNode }) {
+  return <div><p className="mb-2 text-[11px] text-black/40">{label}</p><div className="flex flex-wrap gap-1.5">{children}</div></div>;
 }
 
 function toDateTimeInput(value: string) {

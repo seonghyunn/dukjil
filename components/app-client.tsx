@@ -63,7 +63,7 @@ export function AppClient() {
       }));
       setConcerts(mapped);
     }
-    if (profileRow) setProfile({ originName: profileRow.origin_name, originAddress: profileRow.origin_address, originLatitude: profileRow.origin_latitude, originLongitude: profileRow.origin_longitude, originCountryCode: profileRow.origin_country_code });
+    if (profileRow) setProfile({ originConfigured: Boolean(profileRow.origin_configured), originName: profileRow.origin_name, originAddress: profileRow.origin_address, originLatitude: profileRow.origin_latitude, originLongitude: profileRow.origin_longitude, originCountryCode: profileRow.origin_country_code });
   }
 
   async function saveConcerts(nextConcerts: Concert[], imageFile?: File) {
@@ -99,7 +99,7 @@ export function AppClient() {
 
   async function saveProfile(next: Profile) {
     setProfile(next);
-    if (supabase && session?.user) await supabase.from('profiles').upsert({ user_id: session.user.id, origin_name: next.originName, origin_address: next.originAddress, origin_latitude: next.originLatitude, origin_longitude: next.originLongitude, origin_country_code: next.originCountryCode });
+    if (supabase && session?.user) await supabase.from('profiles').upsert({ user_id: session.user.id, origin_configured: next.originConfigured, origin_name: next.originName, origin_address: next.originAddress, origin_latitude: next.originLatitude, origin_longitude: next.originLongitude, origin_country_code: next.originCountryCode });
   }
 
   async function updateConcert(next: Concert, imageFile?: File) {
@@ -160,7 +160,7 @@ export function AppClient() {
             <span className="shrink-0">새로고침하면 입력이 초기화돼요</span>
           </div>
         )}
-        {view === 'now' && <NowView concerts={concerts} year={statsYear} onYearChange={setStatsYear} onAdd={() => setAddOpen(true)} onSelect={setSelected} />}
+        {view === 'now' && <NowView concerts={concerts} year={statsYear} onYearChange={setStatsYear} onSelect={setSelected} />}
         {view === 'calendar' && <CalendarView concerts={concerts} onSelect={setSelected} />}
         {view === 'map' && <JourneyMap concerts={concerts} profile={profile} onProfileChange={saveProfile} />}
         <button aria-label="공연 추가" onClick={() => setAddOpen(true)} className="fixed bottom-[90px] right-5 z-20 grid size-12 place-items-center rounded-full bg-[#ff6b61] text-black shadow-xl shadow-black/40 sm:right-[max(24px,calc((100vw-1152px)/2))]"><Plus /></button>
@@ -171,13 +171,13 @@ export function AppClient() {
         </nav>
         {session && <button aria-label="로그아웃" onClick={() => supabase?.auth.signOut()} className="fixed right-4 top-4 rounded-full p-2 text-black/30 hover:text-black"><LogOut className="size-4" /></button>}
       </div>
-      <AddConcertDialog open={addOpen} onOpenChange={setAddOpen} onSave={saveConcerts} />
-      <ConcertDetail concert={selected} onOpenChange={(open) => !open && setSelected(null)} onSave={updateConcert} onAddReview={addReview} onDeleteReview={deleteReview} onDelete={deleteConcert} />
+      <AddConcertDialog open={addOpen} onOpenChange={setAddOpen} onSave={saveConcerts} concerts={concerts} />
+      <ConcertDetail concert={selected} concerts={concerts} onOpenChange={(open) => !open && setSelected(null)} onSave={updateConcert} onAddReview={addReview} onDeleteReview={deleteReview} onDelete={deleteConcert} />
     </main>
   );
 }
 
-function NowView({ concerts, year, onYearChange, onAdd, onSelect }: { concerts: Concert[]; year: number; onYearChange: (year: number) => void; onAdd: () => void; onSelect: (concert: Concert) => void }) {
+function NowView({ concerts, year, onYearChange, onSelect }: { concerts: Concert[]; year: number; onYearChange: (year: number) => void; onSelect: (concert: Concert) => void }) {
   const now = new Date();
   const availableYears = [...new Set([now.getFullYear(), ...concerts.map((concert) => new Date(concert.performanceAt).getFullYear())])].sort((a, b) => b - a);
   const [filter, setFilter] = useState<'all' | 'attended' | 'scheduled'>('all');
@@ -209,17 +209,13 @@ function NowView({ concerts, year, onYearChange, onAdd, onSelect }: { concerts: 
   const visibleConcerts = yearConcerts.filter((concert) => filter === 'all' || concert.status === filter).sort((a, b) => b.performanceAt.localeCompare(a.performanceAt));
 
   return <section className="animate-in fade-in pb-20 duration-300">
-    <header className="flex items-end justify-between gap-4"><div><p className="eyebrow">Dukjil log</p><h1 className="screen-title">공연 생활, 한눈에</h1><p className="mt-2 text-sm text-black/45">기록이 쌓일수록 나만의 공연 취향이 선명해져요.</p></div><Button size="icon-lg" className="size-11 shrink-0 rounded-full bg-[#ff6b61] text-black hover:bg-[#ff827a]" onClick={onAdd}><Plus /></Button></header>
+    <header><p className="eyebrow">Dukjil log</p><h1 className="screen-title">공연 생활, 한눈에</h1><p className="mt-2 text-sm text-black/45">기록이 쌓일수록 나만의 공연 취향이 선명해져요.</p></header>
 
-    <div className="mt-7 grid gap-4 lg:grid-cols-[1.55fr_.75fr]">
+    <div className="mt-7">
       <section className="overflow-hidden rounded-[30px] bg-[#f3f0e8] p-5 text-[#181713] sm:p-7">
         <div className="flex items-start justify-between gap-3"><div><p className="text-xs font-medium text-black/45">Yearly archive</p><h2 className="mt-1 text-3xl font-semibold tracking-[-0.055em]">{year}년 공연 장부</h2></div><label className="relative"><span className="sr-only">연도 선택</span><select value={year} onChange={(event) => onYearChange(Number(event.target.value))} className="rounded-full border border-black/10 bg-white px-4 py-2 text-sm font-semibold outline-none">{availableYears.map((value) => <option key={value}>{value}</option>)}</select></label></div>
         <div className="mt-7 grid grid-cols-3 gap-2 border-t border-black/10 pt-5"><OverviewNumber label="기록한 공연" value={`${yearConcerts.length}회`} /><OverviewNumber label="관람 완료" value={`${attended.length}회`} /><OverviewNumber label="총 결제액" value={money(annualPaid)} /></div>
       </section>
-      <button onClick={() => nextConcert && onSelect(nextConcert)} disabled={!nextConcert} className="group relative min-h-44 overflow-hidden rounded-[30px] border border-[#ff6b61]/15 bg-[#ffe5df] p-5 text-left shadow-sm disabled:cursor-default">
-        {nextConcert && <PosterImage src={nextConcert.posterUrl} title={nextConcert.title} className="absolute inset-y-0 right-0 h-full w-2/5 object-cover opacity-45 [mask-image:linear-gradient(to_right,transparent,black)]" />}
-        <span className="relative block text-xs text-[#d94d44]">Next stage</span><b className="relative mt-3 block max-w-[72%] text-xl leading-tight">{nextConcert?.title || '예정된 공연이 없어요'}</b><span className="relative mt-3 block max-w-[72%] text-xs leading-5 text-black/50">{nextConcert ? `${dateLabel(nextConcert.performanceAt)} · ${nextConcert.venue}` : '새 공연을 추가해 다음 무대를 기다려 보세요.'}</span>{nextConcert && <ChevronRight className="absolute bottom-5 right-5 size-5 text-black/40 transition group-hover:translate-x-1" />}
-      </button>
     </div>
 
     <section className="mt-4 rounded-[30px] bg-[#f3f0e8] p-4 text-[#181713] sm:p-6">
@@ -227,6 +223,11 @@ function NowView({ concerts, year, onYearChange, onAdd, onSelect }: { concerts: 
       <div className="mt-4 h-64 w-full" aria-label={`${year}년 덕질 통계 그래프`}><ResponsiveContainer width="100%" height="100%">{chartMode === 'artist-count' ? <PieChart><Pie data={artistData} dataKey="count" nameKey="artist" innerRadius={48} outerRadius={82} paddingAngle={3}>{artistData.map((item, index) => <Cell key={item.artist} fill={CHART_COLORS[index % CHART_COLORS.length]} />)}</Pie><Tooltip formatter={(value) => `${String(value)}회`} contentStyle={{ border: 0, borderRadius: 14, boxShadow: '0 10px 30px rgba(0,0,0,.12)', fontSize: 12 }} /><Legend iconType="circle" wrapperStyle={{ fontSize: 11 }} /></PieChart> : <BarChart data={barData} margin={{ top: 14, right: 0, left: chartMode.includes('spend') ? 4 : -28, bottom: 0 }}><CartesianGrid vertical={false} stroke="rgba(0,0,0,.08)" strokeDasharray="3 4" /><XAxis dataKey="label" axisLine={false} tickLine={false} tick={{ fill: 'rgba(0,0,0,.42)', fontSize: 10 }} /><YAxis allowDecimals={false} tickFormatter={(value) => chartMode.includes('spend') ? `${Math.round(Number(value) / 10000)}만` : String(value)} axisLine={false} tickLine={false} tick={{ fill: 'rgba(0,0,0,.35)', fontSize: 10 }} /><Tooltip formatter={(value) => chartMode.includes('spend') ? money(Number(value)) : `${String(value)}회`} cursor={{ fill: 'rgba(0,0,0,.035)' }} contentStyle={{ border: 0, borderRadius: 14, boxShadow: '0 10px 30px rgba(0,0,0,.12)', fontSize: 12 }} />{chartMode === 'monthly-count' ? <><Bar dataKey="attended" name="관람 완료" stackId="count" fill="#ff6b61" maxBarSize={24} /><Bar dataKey="scheduled" name="예정" stackId="count" fill="#b8e96c" radius={[5, 5, 0, 0]} maxBarSize={24} /></> : <Bar dataKey="spend" name={chartMode === 'monthly-spend' ? '지출액' : '누적 사용액'} fill="#ff6b61" radius={[6, 6, 0, 0]} maxBarSize={34} />}</BarChart>}</ResponsiveContainer></div>
       {chartMode === 'artist-spend' && <p className="mt-1 text-center text-[10px] text-black/35">여러 아티스트가 함께한 공연은 각 아티스트의 누적액에 결제액 전체가 포함돼요.</p>}
     </section>
+
+    <button onClick={() => nextConcert && onSelect(nextConcert)} disabled={!nextConcert} className="group relative mt-4 min-h-40 w-full overflow-hidden rounded-[30px] border border-[#ff6b61]/15 bg-[#ffe5df] p-5 text-left shadow-sm disabled:cursor-default sm:p-6">
+      {nextConcert && <PosterImage src={nextConcert.posterUrl} title={nextConcert.title} className="absolute inset-y-0 right-0 h-full w-2/5 object-cover opacity-45 [mask-image:linear-gradient(to_right,transparent,black)]" />}
+      <span className="relative block text-xs text-[#d94d44]">Next stage</span><b className="relative mt-3 block max-w-[72%] text-xl leading-tight">{nextConcert?.title || '예정된 공연이 없어요'}</b><span className="relative mt-3 block max-w-[72%] text-xs leading-5 text-black/50">{nextConcert ? `${dateLabel(nextConcert.performanceAt)} · ${nextConcert.venue}` : '새 공연을 추가해 다음 무대를 기다려 보세요.'}</span>{nextConcert && <ChevronRight className="absolute bottom-5 right-5 size-5 text-black/40 transition group-hover:translate-x-1" />}
+    </button>
 
     <div className="mt-4 grid grid-cols-2 gap-3 lg:grid-cols-4"><DashboardMetric icon={<CalendarClock />} label={`${now.getMonth() + 1}월 관람`} value={`${monthAttended.length}회`} detail={overdueCount ? `완료 확인 ${overdueCount}건` : '모두 정리했어요'} /><DashboardMetric icon={<CircleDollarSign />} label={`${now.getMonth() + 1}월 지출`} value={money(monthPaid)} detail={`예정 포함 · 정가 ${money(monthList)}`} /><DashboardMetric icon={<Trophy />} label={`${year} 관심 아티스트`} value={topArtist?.[0] || '아직 없음'} detail={topArtist ? `${topArtist[1]}개 공연 기록` : '첫 공연을 기록해 보세요'} accent /><DashboardMetric icon={<WalletCards />} label="공연당 평균" value={money(averagePaid)} detail={`${year} · ${statScope === 'all' ? '전체 기록' : statScope === 'attended' ? '관람 완료' : '예정 공연'} 기준`} /></div>
 
@@ -240,7 +241,7 @@ function NowView({ concerts, year, onYearChange, onAdd, onSelect }: { concerts: 
   </section>;
 }
 
-function ConcertDetail({ concert, onOpenChange, onSave, onAddReview, onDeleteReview, onDelete }: { concert: Concert | null; onOpenChange: (open: boolean) => void; onSave: (concert: Concert, imageFile?: File) => Promise<void>; onAddReview: (concert: Concert, body: string, rating: number) => Promise<void>; onDeleteReview: (concert: Concert, reviewId: string) => Promise<void>; onDelete: (concert: Concert) => Promise<void> }) {
+function ConcertDetail({ concert, concerts, onOpenChange, onSave, onAddReview, onDeleteReview, onDelete }: { concert: Concert | null; concerts: Concert[]; onOpenChange: (open: boolean) => void; onSave: (concert: Concert, imageFile?: File) => Promise<void>; onAddReview: (concert: Concert, body: string, rating: number) => Promise<void>; onDeleteReview: (concert: Concert, reviewId: string) => Promise<void>; onDelete: (concert: Concert) => Promise<void> }) {
   const [draft, setDraft] = useState<Concert | null>(concert);
   const [comment, setComment] = useState('');
   const [rating, setRating] = useState(5);
@@ -248,10 +249,13 @@ function ConcertDetail({ concert, onOpenChange, onSave, onAddReview, onDeleteRev
   const [saving, setSaving] = useState(false);
   useEffect(() => { setDraft(concert); setImageFile(undefined); }, [concert]);
   if (!concert || !draft) return null;
+  const artistSuggestions = [...new Set(concerts.flatMap((item) => item.artists))].slice(0, 10);
+  const venueSuggestions = [...new globalThis.Map(concerts.filter((item) => item.venue).map((item) => [item.venue, item])).values()].slice(0, 8);
+  const providerSuggestions = [...new Set(concerts.map((item) => item.bookingProvider).filter(Boolean))].slice(0, 8);
   const update = <K extends keyof Concert>(key: K, value: Concert[K]) => setDraft((current) => current ? { ...current, [key]: value } : current);
   async function saveDetails() { setSaving(true); try { await onSave(draft!, imageFile); setImageFile(undefined); } finally { setSaving(false); } }
   async function postComment() { if (!comment.trim()) return; await onAddReview(concert!, comment, rating); setComment(''); setRating(5); }
-  return <Dialog open onOpenChange={onOpenChange}><DialogContent className="max-h-[92vh] overflow-y-auto border-black/10 bg-[#fbfaf6] p-0 text-[#1c1b18] sm:max-w-xl">
+  return <Dialog open onOpenChange={onOpenChange}><DialogContent className="max-h-[92vh] w-[calc(100vw-24px)] max-w-xl overflow-x-hidden overflow-y-auto border-black/10 bg-[#fbfaf6] p-0 text-[#1c1b18]">
     <div className="relative h-44"><PosterImage src={draft.posterUrl} title={draft.title} className="h-full w-full object-cover" /><span className="absolute inset-0 bg-gradient-to-t from-[#fbfaf6] to-transparent" /><span className="absolute bottom-3 right-4 rounded-full bg-black/65 px-3 py-1.5 text-[11px] text-white backdrop-blur">{draft.posterSource === 'upload' ? '직접 업로드 사진' : '공식 이미지'}</span></div>
     <div className="space-y-5 px-5 pb-6">
       <DialogHeader><DialogTitle className="text-xl">공연 상세 편집</DialogTitle><DialogDescription>장부에서 바로 공연 정보와 사진을 수정할 수 있어요.</DialogDescription></DialogHeader>
@@ -267,11 +271,16 @@ function ConcertDetail({ concert, onOpenChange, onSave, onAddReview, onDeleteRev
         <DetailField label="실제 결제액"><Input inputMode="numeric" value={draft.paidAmount ?? ''} onChange={(event) => update('paidAmount', event.target.value ? Number(event.target.value.replace(/\D/g, '')) : null)} /></DetailField>
         <DetailField label="예매 URL"><Input value={draft.sourceUrl} onChange={(event) => update('sourceUrl', event.target.value)} /></DetailField>
       </div>
+      <div className="space-y-3 rounded-2xl bg-black/[0.035] p-3">
+        {artistSuggestions.length > 0 && <QuickChoices label="기록한 아티스트">{artistSuggestions.map((artist) => <button key={artist} type="button" className="suggestion-chip" onClick={() => { if (!draft.artists.includes(artist)) update('artists', [...draft.artists, artist]); }}>{artist}</button>)}</QuickChoices>}
+        {venueSuggestions.length > 0 && <QuickChoices label="기록한 공연장">{venueSuggestions.map((item) => <button key={item.venue} type="button" className="suggestion-chip" onClick={() => setDraft((current) => current ? { ...current, venue: item.venue, address: item.address, latitude: item.latitude, longitude: item.longitude, countryCode: item.countryCode } : current)}>{item.venue}</button>)}</QuickChoices>}
+        {providerSuggestions.length > 0 && <QuickChoices label="기록한 예매처">{providerSuggestions.map((provider) => <button key={provider} type="button" className="suggestion-chip" onClick={() => update('bookingProvider', provider)}>{provider}</button>)}</QuickChoices>}
+      </div>
       <div className="grid grid-cols-2 gap-2"><Button variant={draft.status === 'scheduled' ? 'default' : 'outline'} onClick={() => update('status', 'scheduled')}>예정</Button><Button variant={draft.status === 'attended' ? 'default' : 'outline'} onClick={() => update('status', 'attended')}>관람 완료</Button></div>
       <Button className="h-11 w-full bg-[#1f1d19] text-white hover:bg-black" onClick={saveDetails} disabled={saving}>{saving ? '저장 중…' : '상세 정보 저장'}</Button>
 
       <section className="border-t border-black/10 pt-5"><div className="flex items-center justify-between"><h3 className="flex items-center gap-2 text-sm font-semibold"><MessageCircle className="size-4 text-[#d94d44]" />공연 후기</h3><span className="text-[11px] text-black/35">{concert.reviews.length}개</span></div>
-        <div className="mt-3 space-y-2">{concert.reviews.length ? concert.reviews.map((review) => <article key={review.id} className="group rounded-2xl bg-[#f1eee6] p-3"><div className="mb-2 flex items-center justify-between gap-3">{review.rating == null ? <span /> : <RatingStars value={review.rating} />}<button aria-label="후기 삭제" onClick={() => onDeleteReview(concert, review.id)} className="shrink-0 rounded-full p-1 text-black/20 hover:bg-white hover:text-red-500"><Trash2 className="size-3.5" /></button></div><p className="whitespace-pre-wrap text-sm leading-6 text-black/75">{review.body}</p><time className="mt-2 block text-[10px] text-black/30">{new Intl.DateTimeFormat('ko-KR', { month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' }).format(new Date(review.createdAt))}</time></article>) : <p className="rounded-2xl border border-dashed border-black/10 p-5 text-center text-xs text-black/35">첫 후기를 남겨보세요.</p>}</div>
+        <div className="mt-3 min-w-0 space-y-2">{concert.reviews.length ? concert.reviews.map((review) => <article key={review.id} className="group min-w-0 rounded-2xl bg-[#f1eee6] p-3"><div className="mb-2 flex items-center justify-between gap-3">{review.rating == null ? <span /> : <RatingStars value={review.rating} />}<button aria-label="후기 삭제" onClick={() => onDeleteReview(concert, review.id)} className="shrink-0 rounded-full p-1 text-black/20 hover:bg-white hover:text-red-500"><Trash2 className="size-3.5" /></button></div><p className="break-words whitespace-pre-wrap text-sm leading-6 text-black/75 [overflow-wrap:anywhere]">{review.body}</p><time className="mt-2 block text-[10px] text-black/30">{new Intl.DateTimeFormat('ko-KR', { month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' }).format(new Date(review.createdAt))}</time></article>) : <p className="rounded-2xl border border-dashed border-black/10 p-5 text-center text-xs text-black/35">첫 후기를 남겨보세요.</p>}</div>
         <div className="mt-3 space-y-2"><RatingPicker value={rating} onChange={setRating} /><div className="flex items-end gap-2"><Textarea value={comment} onChange={(event) => setComment(event.target.value)} maxLength={2000} className="min-h-20 resize-none" placeholder="공연 후기를 댓글처럼 하나씩 남겨보세요." /><Button size="icon-lg" aria-label="후기 등록" className="shrink-0 bg-[#ff6b61] text-black hover:bg-[#ff827a]" onClick={postComment} disabled={!comment.trim()}><Send /></Button></div></div>
       </section>
       <button onClick={() => onDelete(concert)} className="w-full py-1 text-xs text-red-500/65 hover:text-red-600">이 기록 삭제</button>
@@ -279,7 +288,8 @@ function ConcertDetail({ concert, onOpenChange, onSave, onAddReview, onDeleteRev
   </DialogContent></Dialog>;
 }
 
-function DetailField({ label, children }: { label: string; children: React.ReactNode }) { return <label className="block text-xs font-medium text-black/50"><span className="mb-1.5 block">{label}</span>{children}</label>; }
+function DetailField({ label, children }: { label: string; children: React.ReactNode }) { return <label className="block min-w-0 text-xs font-medium text-black/50"><span className="mb-1.5 block">{label}</span>{children}</label>; }
+function QuickChoices({ label, children }: { label: string; children: React.ReactNode }) { return <div className="min-w-0"><p className="mb-2 text-[11px] text-black/40">{label}</p><div className="flex min-w-0 flex-wrap gap-1.5">{children}</div></div>; }
 
 function NavButton({ active, onClick, icon, label }: { active: boolean; onClick: () => void; icon: React.ReactNode; label: string }) { return <button onClick={onClick} className={`flex min-w-20 flex-col items-center gap-1 rounded-2xl px-4 py-2 transition ${active ? 'bg-[#1f1d19] text-[#dfff94]' : 'text-black/40'}`}><span className="[&>svg]:size-5">{icon}</span><span className="text-[11px]">{label}</span></button>; }
 function OverviewNumber({ label, value }: { label: string; value: string }) { return <div className="min-w-0"><p className="text-[10px] text-black/40">{label}</p><p className="mt-1 truncate text-lg font-semibold tracking-[-0.035em] sm:text-2xl">{value}</p></div>; }

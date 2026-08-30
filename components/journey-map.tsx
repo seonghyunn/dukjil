@@ -22,7 +22,7 @@ export function JourneyMap({ concerts, profile, onProfileChange }: { concerts: C
   const [tripIndex, setTripIndex] = useState(0);
   const [progress, setProgress] = useState(0);
   const [speed, setSpeed] = useState(1);
-  const [editingOrigin, setEditingOrigin] = useState(false);
+  const [editingOrigin, setEditingOrigin] = useState(!profile.originConfigured);
   const [query, setQuery] = useState(profile.originAddress);
   const [candidates, setCandidates] = useState<GeocodeCandidate[]>([]);
   const animation = useRef<number | null>(null);
@@ -88,13 +88,14 @@ export function JourneyMap({ concerts, profile, onProfileChange }: { concerts: C
   }
 
   async function chooseOrigin(candidate: GeocodeCandidate) {
-    await onProfileChange({ originName: candidate.name, originAddress: candidate.address, originLatitude: candidate.latitude, originLongitude: candidate.longitude, originCountryCode: candidate.countryCode });
+    await onProfileChange({ originConfigured: true, originName: candidate.name, originAddress: candidate.address, originLatitude: candidate.latitude, originLongitude: candidate.longitude, originCountryCode: candidate.countryCode });
     setEditingOrigin(false); setCandidates([]);
   }
 
   return (
     <section className="animate-in fade-in duration-300 pb-28">
       <header className="flex items-start justify-between"><div><p className="eyebrow">Tour map</p><h1 className="screen-title">내가 달려간 거리</h1></div><Button variant="outline" size="icon-lg" aria-label="출발지 설정" onClick={() => setEditingOrigin((value) => !value)}><Settings2 /></Button></header>
+      {!profile.originConfigured ? <div className="mt-6 rounded-[30px] border border-black/10 bg-[#f3f0e8] p-5 shadow-sm sm:p-7"><p className="text-xs font-medium text-[#d94d44]">첫 원정을 시작하기 전에</p><h2 className="mt-2 text-2xl font-semibold tracking-[-0.04em]">출발지를 직접 정해 주세요</h2><p className="mt-2 text-sm leading-6 text-black/45">집 근처 도시나 자주 출발하는 주소를 검색하면, 모든 공연의 예상 왕복거리를 이곳부터 계산해요.</p><div className="mt-5 flex gap-2"><Input value={query} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') void searchOrigin(); }} placeholder="예: 대전역, 부산 해운대구" className="h-11" /><Button onClick={searchOrigin} disabled={!query.trim()} className="h-11 bg-[#ff6b61] text-black hover:bg-[#ff827a]">찾기</Button></div>{candidates.length > 0 && <div className="mt-3 space-y-1 rounded-2xl bg-white/70 p-2">{candidates.map((candidate) => <button key={candidate.id} onClick={() => chooseOrigin(candidate)} className="flex w-full gap-2 rounded-xl p-2 text-left text-xs hover:bg-black/5"><MapPin className="size-4 shrink-0 text-[#d94d44]" /><span><b className="block">{candidate.name}</b><span className="text-black/45">{candidate.address}</span></span></button>)}</div>}</div> : <>
       <div className="mt-6 grid grid-cols-3 gap-2">
         <Stat label="원정" value={`${trips.length}회`} />
         <Stat label="예상 왕복" value={formatDistance(totalDistance)} />
@@ -115,6 +116,7 @@ export function JourneyMap({ concerts, profile, onProfileChange }: { concerts: C
         <label className="flex h-11 items-center gap-2 rounded-full border border-black/10 bg-white px-4 text-xs text-black/50"><span>배속</span><select aria-label="지도 왕복 재생 속도" value={speed} onChange={(event) => setSpeed(Number(event.target.value))} className="bg-transparent font-semibold text-black outline-none"><option value="0.5">0.5×</option><option value="1">1×</option><option value="1.5">1.5×</option><option value="2">2×</option></select></label>
       </div>
       {reducedMotion && <p className="mt-3 text-center text-xs text-black/45">동작 줄이기 설정에 따라 전체 원정 경로를 표시하고 있어요.</p>}
+      </>}
     </section>
   );
 }
