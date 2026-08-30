@@ -1,4 +1,4 @@
-import type { NotionConcertDraft } from '@/lib/types';
+import type { ConcertReview, NotionConcertDraft } from '@/lib/types';
 
 const NOTION_HOSTS = new Set(['notion.so', 'www.notion.so', 'notion.site', 'www.notion.site', 'app.notion.com']);
 const MAX_RESPONSE_BYTES = 8 * 1024 * 1024;
@@ -13,6 +13,10 @@ type NotionRecord = {
   view_ids?: string[];
   schema?: Record<string, { name?: string; type?: string }>;
   properties?: Record<string, unknown>;
+  discussions?: string[] | string;
+  comments?: string[];
+  text?: unknown;
+  created_time?: number;
 };
 
 export async function POST(request: Request) {
@@ -37,6 +41,7 @@ export async function POST(request: Request) {
     }
 
     const drafts = new Map<string, NotionConcertDraft>();
+    const discussionParents = new Map<string, { rowId: string; spaceId: string }>();
     const viewNames = new Set<string>();
     for (const databaseBlock of databaseBlocks.slice(0, 5)) {
       const collection = collections.find((item) => item.id === databaseBlock.collection_id);
@@ -53,17 +58,29 @@ export async function POST(request: Request) {
         for (const row of recordValues(result.recordMap?.block)) {
           if (row.type !== 'page' || row.parent_id !== databaseBlock.collection_id || drafts.has(row.id)) continue;
           const draft = rowToDraft(row, schema);
-          if (draft.title && draft.performanceAt) drafts.set(row.id, draft);
+          if (draft.title && draft.performanceAt) {
+            drafts.set(row.id, draft);
+            for (const discussionId of idList(row.discussions)) discussionParents.set(discussionId, { rowId: row.id, spaceId: row.space_id || databaseBlock.space_id || '' });
+          }
         }
       }
     }
+
+    let commentsImported = 0;
+    try {
+      const reviewsByRow = await loadReviews(discussionParents);
+      for (const [rowId, reviews] of reviewsByRow) {
+        const draft = drafts.get(rowId);
+        if (draft) { draft.reviews = reviews; commentsImported += reviews.length; }
+      }
+    } catch { /* 공연 기본 정보는 유지하고 댓글만 경고로 안내해요. */ }
 
     const concerts = [...drafts.values()].sort((a, b) => b.performanceAt.localeCompare(a.performanceAt));
     if (!concerts.length) return Response.json({ error: '공연명과 날짜가 있는 행을 찾지 못했어요.' }, { status: 422 });
     return Response.json({
       pageTitle: richText(propertyOf(blocks.find((block) => block.id === pageId), 'title')) || 'Notion 공연 기록',
-      views: [...viewNames], concerts,
-      warnings: ['노션 댓글과 비공개 파일 이미지는 자동 이관되지 않아요.', '공연장 좌표는 가져온 뒤 공연 상세에서 위치를 확인해 주세요.'],
+      views: [...viewNames], concerts, commentsImported,
+      warnings: [...(discussionParents.size > 0 && commentsImported === 0 ? ['댓글을 읽지 못했어요. 페이지 댓글 공개 설정을 확인해 주세요.'] : []), '비공개 파일 이미지는 자동 이관되지 않아요.', '공연장 좌표는 가져온 뒤 공연 상세에서 위치를 확인해 주세요.'],
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : '노션 기록을 불러오지 못했어요.';
@@ -131,12 +148,46 @@ function rowToDraft(row: NotionRecord, schema: Record<string, { name?: string; t
     bookingProvider: richText(byNames(['예매처', 'Booking', 'Provider'])),
     listPrice: numberValue(byNames(['티켓 가격', '정가', '가격', 'Price'])),
     paidAmount: numberValue(byNames(['수수료 포함', '실제 결제액', '결제액', 'Paid', 'Amount'])),
+    reviews: [],
   };
+}
+
+async function loadReviews(discussionParents: Map<string, { rowId: string; spaceId: string }>) {
+  const discussions = await syncRecords('discussion', [...discussionParents.keys()], discussionParents);
+  const commentParents = new Map<string, { rowId: string; spaceId: string }>();
+  for (const discussion of discussions) {
+    const parent = discussionParents.get(discussion.id);
+    if (!parent) continue;
+    for (const commentId of discussion.comments || []) commentParents.set(commentId, parent);
+  }
+  const comments = await syncRecords('comment', [...commentParents.keys()], commentParents);
+  const reviews = new Map<string, ConcertReview[]>();
+  for (const comment of comments) {
+    const parent = commentParents.get(comment.id);
+    const body = richText(comment.text);
+    if (!parent || !body) continue;
+    const review: ConcertReview = { id: comment.id, body, createdAt: typeof comment.created_time === 'number' ? new Date(comment.created_time).toISOString() : new Date().toISOString() };
+    reviews.set(parent.rowId, [...(reviews.get(parent.rowId) || []), review]);
+  }
+  for (const items of reviews.values()) items.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  return reviews;
+}
+
+async function syncRecords(table: 'discussion' | 'comment', ids: string[], parents: Map<string, { rowId: string; spaceId: string }>) {
+  const records: NotionRecord[] = [];
+  for (let index = 0; index < ids.length; index += 100) {
+    const batch = ids.slice(index, index + 100);
+    const spaceId = parents.get(batch[0])?.spaceId;
+    const result = await notionPost('syncRecordValues', { requests: batch.map((id) => ({ table, id, version: -1 })) }, spaceId);
+    records.push(...recordValues(result.recordMap?.[table]));
+  }
+  return records;
 }
 
 function propertyOf(block: NotionRecord | undefined, id: string) { return block?.properties?.[id]; }
 function normalize(value: string) { return value.replace(/\s+/g, '').toLowerCase(); }
 function splitTags(value: string) { return value.split(/[,，]/).map((item) => item.trim()).filter(Boolean); }
+function idList(value: string[] | string | undefined) { return Array.isArray(value) ? value : value ? [value] : []; }
 
 function richText(value: unknown): string {
   if (!Array.isArray(value)) return '';

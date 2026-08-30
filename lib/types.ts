@@ -70,4 +70,5 @@ export type NotionConcertDraft = {
   bookingProvider: string;
   listPrice: number | null;
   paidAmount: number | null;
+  reviews: ConcertReview[];
 };

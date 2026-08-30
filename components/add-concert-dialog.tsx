@@ -101,14 +101,14 @@ export function AddConcertDialog({ open, onOpenChange, onSave, concerts }: Props
     setLoading(true); setMessage(''); setNotionDrafts([]);
     try {
       const response = await fetch('/api/import-notion', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ url: notionUrl.trim() }) });
-      const data = await response.json() as { pageTitle?: string; concerts?: NotionConcertDraft[]; views?: string[]; warnings?: string[]; error?: string };
+      const data = await response.json() as { pageTitle?: string; concerts?: NotionConcertDraft[]; views?: string[]; commentsImported?: number; warnings?: string[]; error?: string };
       if (!response.ok) throw new Error(data.error || '노션 기록을 불러오지 못했어요.');
       const drafts = data.concerts || [];
       const existingKeys = new Set(concerts.map((concert) => `${concert.title.trim().toLowerCase()}|${concert.performanceAt.slice(0, 10)}`));
       const selectable = drafts.filter((draft) => !existingKeys.has(`${draft.title.trim().toLowerCase()}|${draft.performanceAt.slice(0, 10)}`));
       setNotionDrafts(drafts); setSelectedNotionIds(selectable.map((draft) => draft.sourceId)); setNotionTitle(data.pageTitle || 'Notion 공연 기록');
       const duplicateCount = drafts.length - selectable.length;
-      setMessage(`${data.views?.length || 1}개 보기에서 ${drafts.length}개를 찾았어요.${duplicateCount ? ` 기존 기록과 같은 ${duplicateCount}개는 선택에서 뺐어요.` : ''} ${(data.warnings || []).join(' ')}`);
+      setMessage(`${data.views?.length || 1}개 보기에서 공연 ${drafts.length}개와 댓글 ${data.commentsImported || 0}개를 찾았어요.${duplicateCount ? ` 기존 기록과 같은 ${duplicateCount}개는 선택에서 뺐어요.` : ''} ${(data.warnings || []).join(' ')}`);
     } catch (error) { setMessage(error instanceof Error ? error.message : '노션 기록을 불러오지 못했어요.'); }
     finally { setLoading(false); }
   }
@@ -121,7 +121,7 @@ export function AddConcertDialog({ open, onOpenChange, onSave, concerts }: Props
       id: crypto.randomUUID(), title: draft.title, artists: draft.artists, performanceAt: new Date(draft.performanceAt).toISOString(),
       venue: draft.venue || '장소 미입력', address: draft.venue || '', latitude: null, longitude: null, countryCode: 'KR',
       bookingProvider: draft.bookingProvider || '노션에서 가져옴', sourceUrl: notionUrl.trim(), listPrice: draft.listPrice,
-      paidAmount: draft.paidAmount, status: initialStatusFor(draft.performanceAt), rating: null, reviews: [], posterUrl: '', officialPosterUrl: '', posterSource: 'official',
+      paidAmount: draft.paidAmount, status: initialStatusFor(draft.performanceAt), rating: null, reviews: draft.reviews || [], posterUrl: '', officialPosterUrl: '', posterSource: 'official',
     }));
     try { await onSave(imported); onOpenChange(false); }
     catch (error) { setMessage(error instanceof Error ? `저장하지 못했어요: ${error.message}` : '노션 기록을 저장하지 못했어요. 잠시 후 다시 시도해 주세요.'); }
@@ -211,7 +211,7 @@ export function AddConcertDialog({ open, onOpenChange, onSave, concerts }: Props
             <Button type="button" className="h-11 w-full bg-[#ff6b61] text-[#17120f] hover:bg-[#ff827a]" onClick={importNotion} disabled={loading || !notionUrl.trim()}>{loading ? <LoaderCircle className="animate-spin" /> : <Search />}노션 기록 확인하기</Button>
             {notionDrafts.length > 0 && <div className="overflow-hidden rounded-2xl border border-black/10 bg-white/70">
               <div className="flex items-center justify-between border-b border-black/10 p-3"><div><b className="text-sm">{notionTitle}</b><p className="mt-0.5 text-[11px] text-black/40">{selectedNotionIds.length} / {notionDrafts.length}개 선택</p></div><button type="button" onClick={() => setSelectedNotionIds(selectedNotionIds.length === notionDrafts.length ? [] : notionDrafts.map((draft) => draft.sourceId))} className="rounded-full bg-black/5 px-3 py-1.5 text-xs">{selectedNotionIds.length === notionDrafts.length ? '전체 해제' : '전체 선택'}</button></div>
-              <div className="max-h-72 overflow-y-auto">{notionDrafts.map((draft) => { const checked = selectedNotionIds.includes(draft.sourceId); return <label key={draft.sourceId} className="flex cursor-pointer gap-3 border-b border-black/[0.06] p-3 last:border-0 hover:bg-[#fff8f4]"><input type="checkbox" aria-label={`${draft.title} 이관 선택`} checked={checked} onChange={() => setSelectedNotionIds((ids) => checked ? ids.filter((id) => id !== draft.sourceId) : [...ids, draft.sourceId])} className="mt-1 accent-[#ff6b61]" /><span className="min-w-0 flex-1"><b className="block truncate text-sm">{draft.title}</b><span className="mt-1 block text-[11px] leading-4 text-black/45">{notionDateLabel(draft.performanceAt, draft.endDate)} · {draft.artists.join(' · ') || '아티스트 미입력'}<br />{draft.venue || '장소 미입력'} · {draft.paidAmount == null ? '금액 미입력' : `₩${draft.paidAmount.toLocaleString('ko-KR')}`}</span></span></label>; })}</div>
+              <div className="max-h-72 overflow-y-auto">{notionDrafts.map((draft) => { const checked = selectedNotionIds.includes(draft.sourceId); return <label key={draft.sourceId} className="flex cursor-pointer gap-3 border-b border-black/[0.06] p-3 last:border-0 hover:bg-[#fff8f4]"><input type="checkbox" aria-label={`${draft.title} 이관 선택`} checked={checked} onChange={() => setSelectedNotionIds((ids) => checked ? ids.filter((id) => id !== draft.sourceId) : [...ids, draft.sourceId])} className="mt-1 accent-[#ff6b61]" /><span className="min-w-0 flex-1"><b className="block truncate text-sm">{draft.title}</b><span className="mt-1 block text-[11px] leading-4 text-black/45">{notionDateLabel(draft.performanceAt, draft.endDate)} · {draft.artists.join(' · ') || '아티스트 미입력'}<br />{draft.venue || '장소 미입력'} · {draft.paidAmount == null ? '금액 미입력' : `₩${draft.paidAmount.toLocaleString('ko-KR')}`} · 댓글 {draft.reviews?.length || 0}개</span></span></label>; })}</div>
             </div>}
             {message && <output className="block rounded-xl bg-black/5 p-3 text-xs leading-5 text-[#5d7b27]">{message}</output>}
             {notionDrafts.length > 0 && <Button type="button" onClick={saveNotionConcerts} disabled={loading || !selectedNotionIds.length} className="h-12 w-full bg-[#dfff94] text-[#17120f] hover:bg-[#d5f58d]">선택한 {selectedNotionIds.length}개 공연 이관하기</Button>}
