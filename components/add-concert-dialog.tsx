@@ -163,7 +163,7 @@ export function AddConcertDialog({ open, onOpenChange, onSave, concerts }: Props
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[92vh] overflow-y-auto border-black/10 bg-[#fbfaf6] p-0 text-[#1c1b18] sm:max-w-xl">
+      <DialogContent className="max-h-[92vh] w-[calc(100vw-24px)] max-w-xl overflow-x-hidden overflow-y-auto border-black/10 bg-[#fbfaf6] p-0 text-[#1c1b18]">
         <DialogHeader className="px-5 pt-5">
           <DialogTitle className="text-xl">공연 한 편 기록하기</DialogTitle>
           <DialogDescription>자동으로 채워진 정보도 저장 전에 한 번 확인해 주세요.</DialogDescription>
@@ -174,7 +174,7 @@ export function AddConcertDialog({ open, onOpenChange, onSave, concerts }: Props
           <Button type="button" variant={mode === 'notion' ? 'default' : 'outline'} onClick={() => setMode('notion')} className="flex-1 px-2"><Database />Notion</Button>
         </div>
         {mode === 'url' ? (
-          <div className="space-y-4 px-5 pb-6">
+          <div className="min-w-0 space-y-4 px-5 pb-6">
             <label className="block text-sm font-medium">예매 페이지 URL
               <Input value={form.sourceUrl} onChange={(e) => update('sourceUrl', e.target.value)} placeholder="https://ticket..." className="mt-2 h-11" />
             </label>
@@ -205,15 +205,15 @@ export function AddConcertDialog({ open, onOpenChange, onSave, concerts }: Props
             <Button type="submit" className="h-12 w-full bg-[#ff6b61] text-[#17120f] hover:bg-[#ff827a]" disabled={loading}>{loading && <LoaderCircle className="animate-spin" />}{selectedDates.length > 1 ? `${selectedDates.length}개 회차 각각 저장하기` : '공연 저장하기'}</Button>
           </form>
         ) : (
-          <div className="space-y-4 px-5 pb-6">
+          <div className="min-w-0 space-y-4 px-5 pb-6">
             <div className="rounded-2xl bg-[#f0eee7] p-4"><p className="text-sm font-semibold">기존 노션 기록 한 번에 옮기기</p><p className="mt-1 text-xs leading-5 text-black/45">공개된 노션 페이지의 표를 읽어 공연명, 날짜, 가격, 아티스트, 예매처와 장소를 옮겨요. 저장 전 원하는 행만 고를 수 있어요.</p></div>
             <div><label htmlFor="notion-share-url" className="block text-sm font-medium">노션 공유 링크</label><Input id="notion-share-url" value={notionUrl} onChange={(event) => { setNotionUrl(event.target.value); setNotionDrafts([]); setMessage(''); }} placeholder="https://app.notion.com/p/..." className="mt-2 h-11" /></div>
             <Button type="button" className="h-11 w-full bg-[#ff6b61] text-[#17120f] hover:bg-[#ff827a]" onClick={importNotion} disabled={loading || !notionUrl.trim()}>{loading ? <LoaderCircle className="animate-spin" /> : <Search />}노션 기록 확인하기</Button>
-            {notionDrafts.length > 0 && <div className="overflow-hidden rounded-2xl border border-black/10 bg-white/70">
-              <div className="flex items-center justify-between border-b border-black/10 p-3"><div><b className="text-sm">{notionTitle}</b><p className="mt-0.5 text-[11px] text-black/40">{selectedNotionIds.length} / {notionDrafts.length}개 선택</p></div><button type="button" onClick={() => setSelectedNotionIds(selectedNotionIds.length === notionDrafts.length ? [] : notionDrafts.map((draft) => draft.sourceId))} className="rounded-full bg-black/5 px-3 py-1.5 text-xs">{selectedNotionIds.length === notionDrafts.length ? '전체 해제' : '전체 선택'}</button></div>
-              <div className="max-h-72 overflow-y-auto">{notionDrafts.map((draft) => { const checked = selectedNotionIds.includes(draft.sourceId); return <label key={draft.sourceId} className="flex cursor-pointer gap-3 border-b border-black/[0.06] p-3 last:border-0 hover:bg-[#fff8f4]"><input type="checkbox" aria-label={`${draft.title} 이관 선택`} checked={checked} onChange={() => setSelectedNotionIds((ids) => checked ? ids.filter((id) => id !== draft.sourceId) : [...ids, draft.sourceId])} className="mt-1 accent-[#ff6b61]" /><span className="min-w-0 flex-1"><b className="block truncate text-sm">{draft.title}</b><span className="mt-1 block text-[11px] leading-4 text-black/45">{notionDateLabel(draft.performanceAt, draft.endDate)} · {draft.artists.join(' · ') || '아티스트 미입력'}<br />{draft.venue || '장소 미입력'} · {draft.paidAmount == null ? '금액 미입력' : `₩${draft.paidAmount.toLocaleString('ko-KR')}`} · 댓글 {draft.reviews?.length || 0}개</span></span></label>; })}</div>
+            {notionDrafts.length > 0 && <div className="min-w-0 overflow-hidden rounded-2xl border border-black/10 bg-white/70">
+              <div className="flex min-w-0 items-center justify-between gap-2 border-b border-black/10 p-3"><div className="min-w-0"><b className="block break-words text-sm [overflow-wrap:anywhere]">{notionTitle}</b><p className="mt-0.5 text-[11px] text-black/40">{selectedNotionIds.length} / {notionDrafts.length}개 선택</p></div><button type="button" onClick={() => setSelectedNotionIds(selectedNotionIds.length === notionDrafts.length ? [] : notionDrafts.map((draft) => draft.sourceId))} className="shrink-0 rounded-full bg-black/5 px-3 py-1.5 text-xs">{selectedNotionIds.length === notionDrafts.length ? '전체 해제' : '전체 선택'}</button></div>
+              <div className="max-h-72 min-w-0 overflow-x-hidden overflow-y-auto">{notionDrafts.map((draft) => { const checked = selectedNotionIds.includes(draft.sourceId); return <label key={draft.sourceId} className="flex min-w-0 cursor-pointer gap-3 border-b border-black/[0.06] p-3 last:border-0 hover:bg-[#fff8f4]"><input type="checkbox" aria-label={`${draft.title} 이관 선택`} checked={checked} onChange={() => setSelectedNotionIds((ids) => checked ? ids.filter((id) => id !== draft.sourceId) : [...ids, draft.sourceId])} className="mt-1 shrink-0 accent-[#ff6b61]" /><span className="min-w-0 flex-1"><b className="block truncate text-sm">{draft.title}</b><span className="mt-1 block break-words text-[11px] leading-4 text-black/45 [overflow-wrap:anywhere]">{notionDateLabel(draft.performanceAt, draft.endDate)} · {draft.artists.join(' · ') || '아티스트 미입력'}<br />{draft.venue || '장소 미입력'} · {draft.paidAmount == null ? '금액 미입력' : `₩${draft.paidAmount.toLocaleString('ko-KR')}`} · 댓글 {draft.reviews?.length || 0}개</span></span></label>; })}</div>
             </div>}
-            {message && <output className="block rounded-xl bg-black/5 p-3 text-xs leading-5 text-[#5d7b27]">{message}</output>}
+            {message && <output className="block break-words rounded-xl bg-black/5 p-3 text-xs leading-5 text-[#5d7b27] [overflow-wrap:anywhere]">{message}</output>}
             {notionDrafts.length > 0 && <Button type="button" onClick={saveNotionConcerts} disabled={loading || !selectedNotionIds.length} className="h-12 w-full bg-[#dfff94] text-[#17120f] hover:bg-[#d5f58d]">선택한 {selectedNotionIds.length}개 공연 이관하기</Button>}
             <p className="text-[11px] leading-5 text-black/35">비공개 노션은 읽을 수 없어요. 노션의 공유 메뉴에서 ‘웹에 게시’를 켠 뒤 이관하고, 완료 후 다시 꺼도 됩니다.</p>
           </div>
