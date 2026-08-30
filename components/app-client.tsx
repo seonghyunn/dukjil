@@ -27,6 +27,7 @@ const JourneyMap = dynamic(() => import('./journey-map').then((module) => module
 
 export function AppClient() {
   const [view, setView] = useState<View>('now');
+  const [statsYear, setStatsYear] = useState(new Date().getFullYear());
   const [concerts, setConcerts] = useState<Concert[]>(demoConcerts);
   const [profile, setProfile] = useState<Profile>(demoProfile);
   const [session, setSession] = useState<Session | null>(null);
@@ -66,6 +67,9 @@ export function AppClient() {
 
   async function saveConcerts(nextConcerts: Concert[], imageFile?: File) {
     for (const concert of nextConcerts) await saveConcert(concert, imageFile);
+    const latest = [...nextConcerts].sort((a, b) => b.performanceAt.localeCompare(a.performanceAt))[0];
+    if (latest) setStatsYear(new Date(latest.performanceAt).getFullYear());
+    setView('now');
   }
 
   async function saveConcert(concert: Concert, imageFile?: File) {
@@ -155,7 +159,7 @@ export function AppClient() {
             <span className="shrink-0">새로고침하면 입력이 초기화돼요</span>
           </div>
         )}
-        {view === 'now' && <NowView concerts={concerts} onAdd={() => setAddOpen(true)} onSelect={setSelected} />}
+        {view === 'now' && <NowView concerts={concerts} year={statsYear} onYearChange={setStatsYear} onAdd={() => setAddOpen(true)} onSelect={setSelected} />}
         {view === 'calendar' && <CalendarView concerts={concerts} onSelect={setSelected} />}
         {view === 'map' && <JourneyMap concerts={concerts} profile={profile} onProfileChange={saveProfile} />}
         <button aria-label="공연 추가" onClick={() => setAddOpen(true)} className="fixed bottom-[90px] right-5 z-20 grid size-12 place-items-center rounded-full bg-[#ff6b61] text-black shadow-xl shadow-black/40 sm:right-[max(24px,calc((100vw-1152px)/2))]"><Plus /></button>
@@ -172,32 +176,35 @@ export function AppClient() {
   );
 }
 
-function NowView({ concerts, onAdd, onSelect }: { concerts: Concert[]; onAdd: () => void; onSelect: (concert: Concert) => void }) {
+function NowView({ concerts, year, onYearChange, onAdd, onSelect }: { concerts: Concert[]; year: number; onYearChange: (year: number) => void; onAdd: () => void; onSelect: (concert: Concert) => void }) {
   const now = new Date();
   const availableYears = [...new Set([now.getFullYear(), ...concerts.map((concert) => new Date(concert.performanceAt).getFullYear())])].sort((a, b) => b - a);
-  const [year, setYear] = useState(now.getFullYear());
   const [filter, setFilter] = useState<'all' | 'attended' | 'scheduled'>('all');
   const [chartMode, setChartMode] = useState<'monthly-count' | 'monthly-spend' | 'artist-count' | 'artist-spend'>('monthly-count');
+  const [statScope, setStatScope] = useState<'all' | 'attended' | 'scheduled'>('all');
   const yearConcerts = concerts.filter((concert) => new Date(concert.performanceAt).getFullYear() === year);
   const attended = yearConcerts.filter((concert) => concert.status === 'attended');
+  const statConcerts = yearConcerts.filter((concert) => statScope === 'all' || concert.status === statScope);
   const monthAttended = concerts.filter((concert) => { const date = new Date(concert.performanceAt); return concert.status === 'attended' && date.getFullYear() === now.getFullYear() && date.getMonth() === now.getMonth(); });
-  const monthPaid = sum(monthAttended.map((item) => item.paidAmount));
-  const monthList = sum(monthAttended.map((item) => item.listPrice));
-  const artistCounts = attended.flatMap((item) => item.artists).reduce<Record<string, number>>((acc, artist) => ({ ...acc, [artist]: (acc[artist] || 0) + 1 }), {});
+  const monthRecords = concerts.filter((concert) => { const date = new Date(concert.performanceAt); return date.getFullYear() === now.getFullYear() && date.getMonth() === now.getMonth(); });
+  const monthPaid = sum(monthRecords.map((item) => item.paidAmount));
+  const monthList = sum(monthRecords.map((item) => item.listPrice));
+  const artistCounts = statConcerts.flatMap((item) => item.artists).reduce<Record<string, number>>((acc, artist) => ({ ...acc, [artist]: (acc[artist] || 0) + 1 }), {});
   const topArtist = Object.entries(artistCounts).sort((a, b) => b[1] - a[1])[0];
   const nextConcert = concerts.filter((concert) => concert.status === 'scheduled' && new Date(concert.performanceAt) >= now).sort((a, b) => a.performanceAt.localeCompare(b.performanceAt))[0];
   const overdueCount = concerts.filter((concert) => concert.status === 'scheduled' && new Date(concert.performanceAt) < now).length;
   const annualPaid = sum(yearConcerts.map((item) => item.paidAmount));
   const monthlyData = Array.from({ length: 12 }, (_, month) => {
-    const items = yearConcerts.filter((concert) => new Date(concert.performanceAt).getMonth() === month);
+    const items = statConcerts.filter((concert) => new Date(concert.performanceAt).getMonth() === month);
     return { month: `${month + 1}월`, attended: items.filter((item) => item.status === 'attended').length, scheduled: items.filter((item) => item.status === 'scheduled').length, spend: sum(items.filter((item) => item.status === 'attended').map((item) => item.paidAmount)) };
   });
-  const artistSpend = attended.reduce<Record<string, number>>((acc, concert) => { concert.artists.forEach((artist) => { acc[artist] = (acc[artist] || 0) + (concert.paidAmount ?? 0); }); return acc; }, {});
+  const artistSpend = statConcerts.reduce<Record<string, number>>((acc, concert) => { concert.artists.forEach((artist) => { acc[artist] = (acc[artist] || 0) + (concert.paidAmount ?? 0); }); return acc; }, {});
   const artistData = Object.keys({ ...artistCounts, ...artistSpend }).map((artist) => ({ artist, count: artistCounts[artist] || 0, spend: artistSpend[artist] || 0 })).sort((a, b) => chartMode === 'artist-spend' ? b.spend - a.spend : b.count - a.count).slice(0, 7);
   const barData = chartMode === 'artist-spend'
     ? artistData.map((item) => ({ label: item.artist, attended: 0, scheduled: 0, spend: item.spend }))
     : monthlyData.map((item) => ({ label: item.month, attended: item.attended, scheduled: item.scheduled, spend: item.spend }));
-  const averagePaid = attended.length ? Math.round(sum(attended.map((item) => item.paidAmount)) / attended.length) : 0;
+  const paidRecords = statConcerts.filter((item) => item.paidAmount != null);
+  const averagePaid = paidRecords.length ? Math.round(sum(paidRecords.map((item) => item.paidAmount)) / paidRecords.length) : 0;
   const visibleConcerts = yearConcerts.filter((concert) => filter === 'all' || concert.status === filter).sort((a, b) => b.performanceAt.localeCompare(a.performanceAt));
 
   return <section className="animate-in fade-in pb-20 duration-300">
@@ -205,7 +212,7 @@ function NowView({ concerts, onAdd, onSelect }: { concerts: Concert[]; onAdd: ()
 
     <div className="mt-7 grid gap-4 lg:grid-cols-[1.55fr_.75fr]">
       <section className="overflow-hidden rounded-[30px] bg-[#f3f0e8] p-5 text-[#181713] sm:p-7">
-        <div className="flex items-start justify-between gap-3"><div><p className="text-xs font-medium text-black/45">Yearly archive</p><h2 className="mt-1 text-3xl font-semibold tracking-[-0.055em]">{year}년 공연 장부</h2></div><label className="relative"><span className="sr-only">연도 선택</span><select value={year} onChange={(event) => setYear(Number(event.target.value))} className="rounded-full border border-black/10 bg-white px-4 py-2 text-sm font-semibold outline-none">{availableYears.map((value) => <option key={value}>{value}</option>)}</select></label></div>
+        <div className="flex items-start justify-between gap-3"><div><p className="text-xs font-medium text-black/45">Yearly archive</p><h2 className="mt-1 text-3xl font-semibold tracking-[-0.055em]">{year}년 공연 장부</h2></div><label className="relative"><span className="sr-only">연도 선택</span><select value={year} onChange={(event) => onYearChange(Number(event.target.value))} className="rounded-full border border-black/10 bg-white px-4 py-2 text-sm font-semibold outline-none">{availableYears.map((value) => <option key={value}>{value}</option>)}</select></label></div>
         <div className="mt-7 grid grid-cols-3 gap-2 border-t border-black/10 pt-5"><OverviewNumber label="기록한 공연" value={`${yearConcerts.length}회`} /><OverviewNumber label="관람 완료" value={`${attended.length}회`} /><OverviewNumber label="총 결제액" value={money(annualPaid)} /></div>
       </section>
       <button onClick={() => nextConcert && onSelect(nextConcert)} disabled={!nextConcert} className="group relative min-h-44 overflow-hidden rounded-[30px] border border-[#ff6b61]/15 bg-[#ffe5df] p-5 text-left shadow-sm disabled:cursor-default">
@@ -215,12 +222,12 @@ function NowView({ concerts, onAdd, onSelect }: { concerts: Concert[]; onAdd: ()
     </div>
 
     <section className="mt-4 rounded-[30px] bg-[#f3f0e8] p-4 text-[#181713] sm:p-6">
-      <div className="flex flex-wrap items-center justify-between gap-3"><div><p className="text-xs text-black/40">My fandom insight</p><h2 className="mt-1 text-lg font-semibold">덕질 통계</h2></div><label><span className="sr-only">통계 종류</span><select value={chartMode} onChange={(event) => setChartMode(event.target.value as typeof chartMode)} className="rounded-full border border-black/10 bg-white px-4 py-2 text-xs font-semibold outline-none"><option value="monthly-count">월별 공연 개수</option><option value="artist-count">아티스트별 관람 비중</option><option value="monthly-spend">월별 지출액</option><option value="artist-spend">아티스트별 누적 사용액</option></select></label></div>
+      <div className="flex flex-wrap items-center justify-between gap-3"><div><p className="text-xs text-black/40">My fandom insight</p><h2 className="mt-1 text-lg font-semibold">덕질 통계</h2></div><div className="flex flex-wrap justify-end gap-2"><label><span className="sr-only">공연 상태 범위</span><select value={statScope} onChange={(event) => setStatScope(event.target.value as typeof statScope)} className="rounded-full border border-black/10 bg-white px-3 py-2 text-xs font-semibold outline-none"><option value="all">전체 기록</option><option value="attended">관람 완료</option><option value="scheduled">예정 공연</option></select></label><label><span className="sr-only">통계 종류</span><select value={chartMode} onChange={(event) => setChartMode(event.target.value as typeof chartMode)} className="rounded-full border border-black/10 bg-white px-3 py-2 text-xs font-semibold outline-none"><option value="monthly-count">월별 공연 개수</option><option value="artist-count">아티스트별 관람 비중</option><option value="monthly-spend">월별 지출액</option><option value="artist-spend">아티스트별 누적 사용액</option></select></label></div></div>
       <div className="mt-4 h-64 w-full" aria-label={`${year}년 덕질 통계 그래프`}><ResponsiveContainer width="100%" height="100%">{chartMode === 'artist-count' ? <PieChart><Pie data={artistData} dataKey="count" nameKey="artist" innerRadius={48} outerRadius={82} paddingAngle={3}>{artistData.map((item, index) => <Cell key={item.artist} fill={CHART_COLORS[index % CHART_COLORS.length]} />)}</Pie><Tooltip formatter={(value) => `${String(value)}회`} contentStyle={{ border: 0, borderRadius: 14, boxShadow: '0 10px 30px rgba(0,0,0,.12)', fontSize: 12 }} /><Legend iconType="circle" wrapperStyle={{ fontSize: 11 }} /></PieChart> : <BarChart data={barData} margin={{ top: 14, right: 0, left: chartMode.includes('spend') ? 4 : -28, bottom: 0 }}><CartesianGrid vertical={false} stroke="rgba(0,0,0,.08)" strokeDasharray="3 4" /><XAxis dataKey="label" axisLine={false} tickLine={false} tick={{ fill: 'rgba(0,0,0,.42)', fontSize: 10 }} /><YAxis allowDecimals={false} tickFormatter={(value) => chartMode.includes('spend') ? `${Math.round(Number(value) / 10000)}만` : String(value)} axisLine={false} tickLine={false} tick={{ fill: 'rgba(0,0,0,.35)', fontSize: 10 }} /><Tooltip formatter={(value) => chartMode.includes('spend') ? money(Number(value)) : `${String(value)}회`} cursor={{ fill: 'rgba(0,0,0,.035)' }} contentStyle={{ border: 0, borderRadius: 14, boxShadow: '0 10px 30px rgba(0,0,0,.12)', fontSize: 12 }} />{chartMode === 'monthly-count' ? <><Bar dataKey="attended" name="관람 완료" stackId="count" fill="#ff6b61" maxBarSize={24} /><Bar dataKey="scheduled" name="예정" stackId="count" fill="#b8e96c" radius={[5, 5, 0, 0]} maxBarSize={24} /></> : <Bar dataKey="spend" name={chartMode === 'monthly-spend' ? '지출액' : '누적 사용액'} fill="#ff6b61" radius={[6, 6, 0, 0]} maxBarSize={34} />}</BarChart>}</ResponsiveContainer></div>
       {chartMode === 'artist-spend' && <p className="mt-1 text-center text-[10px] text-black/35">여러 아티스트가 함께한 공연은 각 아티스트의 누적액에 결제액 전체가 포함돼요.</p>}
     </section>
 
-    <div className="mt-4 grid grid-cols-2 gap-3 lg:grid-cols-4"><DashboardMetric icon={<CalendarClock />} label={`${now.getMonth() + 1}월 관람`} value={`${monthAttended.length}회`} detail={overdueCount ? `완료 확인 ${overdueCount}건` : '모두 정리했어요'} /><DashboardMetric icon={<CircleDollarSign />} label={`${now.getMonth() + 1}월 지출`} value={money(monthPaid)} detail={`정가 ${money(monthList)}`} /><DashboardMetric icon={<Trophy />} label={`${year} 최애`} value={topArtist?.[0] || '아직 없음'} detail={topArtist ? `${topArtist[1]}번 만났어요` : '첫 관람을 기록해 보세요'} accent /><DashboardMetric icon={<WalletCards />} label="공연당 평균" value={money(averagePaid)} detail={`${year} 관람 완료 기준`} /></div>
+    <div className="mt-4 grid grid-cols-2 gap-3 lg:grid-cols-4"><DashboardMetric icon={<CalendarClock />} label={`${now.getMonth() + 1}월 관람`} value={`${monthAttended.length}회`} detail={overdueCount ? `완료 확인 ${overdueCount}건` : '모두 정리했어요'} /><DashboardMetric icon={<CircleDollarSign />} label={`${now.getMonth() + 1}월 지출`} value={money(monthPaid)} detail={`예정 포함 · 정가 ${money(monthList)}`} /><DashboardMetric icon={<Trophy />} label={`${year} 관심 아티스트`} value={topArtist?.[0] || '아직 없음'} detail={topArtist ? `${topArtist[1]}개 공연 기록` : '첫 공연을 기록해 보세요'} accent /><DashboardMetric icon={<WalletCards />} label="공연당 평균" value={money(averagePaid)} detail={`${year} · ${statScope === 'all' ? '전체 기록' : statScope === 'attended' ? '관람 완료' : '예정 공연'} 기준`} /></div>
 
     <section className="mt-9">
       <div className="flex flex-wrap items-end justify-between gap-3"><div><p className="text-xs text-black/35">Concert ledger</p><h2 className="mt-1 text-xl font-semibold">공연냠냠</h2></div><div className="flex rounded-full border border-black/10 bg-black/[0.035] p-1">{([['all', '전체'], ['attended', '관람 완료'], ['scheduled', '예정']] as const).map(([value, label]) => <button key={value} onClick={() => setFilter(value)} className={`rounded-full px-3 py-1.5 text-xs transition ${filter === value ? 'bg-[#dfff94] text-black' : 'text-black/45 hover:text-black'}`}>{label}</button>)}</div></div>
