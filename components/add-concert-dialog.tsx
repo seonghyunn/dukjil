@@ -39,6 +39,10 @@ export function AddConcertDialog({ open, onOpenChange, onSave, concerts }: Props
   const [notionDrafts, setNotionDrafts] = useState<NotionConcertDraft[]>([]);
   const [selectedNotionIds, setSelectedNotionIds] = useState<string[]>([]);
   const [notionTitle, setNotionTitle] = useState('');
+  const [notionLocations, setNotionLocations] = useState<Record<string, GeocodeCandidate>>({});
+  const [notionVenueDraftId, setNotionVenueDraftId] = useState<string | null>(null);
+  const [notionVenueCandidates, setNotionVenueCandidates] = useState<GeocodeCandidate[]>([]);
+  const [notionVenueSearchingId, setNotionVenueSearchingId] = useState<string | null>(null);
   const artistSuggestions = [...new Set(concerts.flatMap((concert) => concert.artists))].sort((a, b) => a.localeCompare(b, 'ko')).slice(0, 10);
   const venueSuggestions = [...new Map(concerts.filter((concert) => concert.venue).map((concert) => [concert.venue, concert])).values()].slice(0, 8);
   const providerSuggestions = [...new Set(concerts.map((concert) => concert.bookingProvider).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'ko')).slice(0, 8);
@@ -46,7 +50,7 @@ export function AddConcertDialog({ open, onOpenChange, onSave, concerts }: Props
 
   useEffect(() => {
     if (!open) {
-      setForm(emptyForm); setStatus('scheduled'); setStatusOverridden(false); setInitialRating(null); setCoords(null); setCandidates([]); setImageFile(undefined); setDateCandidates([]); setSelectedDates([]); setPriceCandidates([]); setMessage(''); setNotionDrafts([]); setSelectedNotionIds([]); setNotionTitle('');
+      setForm(emptyForm); setStatus('scheduled'); setStatusOverridden(false); setInitialRating(null); setCoords(null); setCandidates([]); setImageFile(undefined); setDateCandidates([]); setSelectedDates([]); setPriceCandidates([]); setMessage(''); setNotionDrafts([]); setSelectedNotionIds([]); setNotionTitle(''); setNotionLocations({}); setNotionVenueDraftId(null); setNotionVenueCandidates([]); setNotionVenueSearchingId(null);
     }
   }, [open]);
 
@@ -98,7 +102,7 @@ export function AddConcertDialog({ open, onOpenChange, onSave, concerts }: Props
 
   async function importNotion() {
     if (!notionUrl.trim()) return;
-    setLoading(true); setMessage(''); setNotionDrafts([]);
+    setLoading(true); setMessage(''); setNotionDrafts([]); setNotionLocations({}); setNotionVenueDraftId(null); setNotionVenueCandidates([]);
     try {
       const response = await fetch('/api/import-notion', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ url: notionUrl.trim() }) });
       const data = await response.json() as { pageTitle?: string; concerts?: NotionConcertDraft[]; views?: string[]; commentsImported?: number; warnings?: string[]; error?: string };
@@ -117,15 +121,39 @@ export function AddConcertDialog({ open, onOpenChange, onSave, concerts }: Props
     const selected = notionDrafts.filter((draft) => selectedNotionIds.includes(draft.sourceId));
     if (!selected.length) { setMessage('이관할 공연을 하나 이상 선택해 주세요.'); return; }
     setLoading(true);
-    const imported: Concert[] = selected.map((draft) => ({
+    const imported: Concert[] = selected.map((draft) => { const location = notionLocations[draft.sourceId]; return ({
       id: crypto.randomUUID(), title: draft.title, artists: draft.artists, performanceAt: new Date(draft.performanceAt).toISOString(),
-      venue: draft.venue || '장소 미입력', address: draft.venue || '', latitude: null, longitude: null, countryCode: 'KR',
+      venue: draft.venue || '장소 미입력', address: location?.address || '', latitude: location?.latitude ?? null, longitude: location?.longitude ?? null, countryCode: location?.countryCode || 'KR',
       bookingProvider: draft.bookingProvider || '노션에서 가져옴', sourceUrl: '', listPrice: draft.listPrice,
       paidAmount: draft.paidAmount, status: initialStatusFor(draft.performanceAt), rating: null, reviews: draft.reviews || [], posterUrl: '', officialPosterUrl: '', posterSource: 'official',
-    }));
+    }); });
     try { await onSave(imported); onOpenChange(false); }
     catch (error) { setMessage(error instanceof Error ? `저장하지 못했어요: ${error.message}` : '노션 기록을 저장하지 못했어요. 잠시 후 다시 시도해 주세요.'); }
     finally { setLoading(false); }
+  }
+
+  async function searchNotionVenue(draft: NotionConcertDraft) {
+    const query = venueSearchQuery(draft.venue, '');
+    if (!query) { setMessage('공연장명이 없어 주소를 검색할 수 없어요. 이관 후 공연 상세에서 장소를 입력해 주세요.'); return; }
+    setNotionVenueSearchingId(draft.sourceId); setNotionVenueDraftId(draft.sourceId); setNotionVenueCandidates([]);
+    try {
+      const response = await fetch('/api/geocode', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ query }) });
+      const data = await response.json() as { candidates?: GeocodeCandidate[]; error?: string };
+      if (!response.ok) throw new Error(data.error || '주소를 찾지 못했어요.');
+      const results = data.candidates || [];
+      setNotionVenueCandidates(results);
+      if (!results.length) setMessage(`‘${draft.venue}’의 주소 검색 결과가 없어요. 이관 후 공연 상세에서 직접 수정해 주세요.`);
+    } catch (error) { setMessage(error instanceof Error ? error.message : '주소 검색 중 문제가 생겼어요.'); }
+    finally { setNotionVenueSearchingId(null); }
+  }
+
+  function chooseNotionLocation(draft: NotionConcertDraft, candidate: GeocodeCandidate) {
+    setNotionLocations((current) => {
+      const next = { ...current };
+      notionDrafts.filter((item) => item.venue && item.venue === draft.venue).forEach((item) => { next[item.sourceId] = candidate; });
+      return next;
+    });
+    setNotionVenueDraftId(null); setNotionVenueCandidates([]);
   }
 
   async function resolveVenue(venue: string, address: string) {
@@ -206,12 +234,12 @@ export function AddConcertDialog({ open, onOpenChange, onSave, concerts }: Props
           </form>
         ) : (
           <div className="min-w-0 space-y-4 px-5 pb-6">
-            <div className="rounded-2xl bg-[#f0eee7] p-4"><p className="text-sm font-semibold">기존 노션 기록 한 번에 옮기기</p><p className="mt-1 text-xs leading-5 text-black/45">공개된 노션 페이지의 표를 읽어 공연명, 날짜, 가격, 아티스트, 예매처와 장소를 옮겨요. 저장 전 원하는 행만 고를 수 있어요.</p></div>
-            <div><label htmlFor="notion-share-url" className="block text-sm font-medium">노션 공유 링크</label><Input id="notion-share-url" value={notionUrl} onChange={(event) => { setNotionUrl(event.target.value); setNotionDrafts([]); setMessage(''); }} placeholder="https://app.notion.com/p/..." className="mt-2 h-11" /></div>
+            <div className="rounded-2xl bg-[#f0eee7] p-4"><p className="text-sm font-semibold">기존 노션 기록 한 번에 옮기기</p><p className="mt-1 text-xs leading-5 text-black/45">공개된 노션 페이지에서 공연 정보를 옮겨요. 공연장 주소는 각 기록의 ‘주소 찾기’에서 검색 결과를 확인하고 선택할 수 있어요.</p></div>
+            <div><label htmlFor="notion-share-url" className="block text-sm font-medium">노션 공유 링크</label><Input id="notion-share-url" value={notionUrl} onChange={(event) => { setNotionUrl(event.target.value); setNotionDrafts([]); setMessage(''); setNotionLocations({}); setNotionVenueDraftId(null); setNotionVenueCandidates([]); }} placeholder="https://app.notion.com/p/..." className="mt-2 h-11" /></div>
             <Button type="button" className="h-11 w-full bg-[#ff6b61] text-[#17120f] hover:bg-[#ff827a]" onClick={importNotion} disabled={loading || !notionUrl.trim()}>{loading ? <LoaderCircle className="animate-spin" /> : <Search />}노션 기록 확인하기</Button>
             {notionDrafts.length > 0 && <div className="min-w-0 overflow-hidden rounded-2xl border border-black/10 bg-white/70">
               <div className="flex min-w-0 items-center justify-between gap-2 border-b border-black/10 p-3"><div className="min-w-0"><b className="block break-words text-sm [overflow-wrap:anywhere]">{notionTitle}</b><p className="mt-0.5 text-[11px] text-black/40">{selectedNotionIds.length} / {notionDrafts.length}개 선택</p></div><button type="button" onClick={() => setSelectedNotionIds(selectedNotionIds.length === notionDrafts.length ? [] : notionDrafts.map((draft) => draft.sourceId))} className="shrink-0 rounded-full bg-black/5 px-3 py-1.5 text-xs">{selectedNotionIds.length === notionDrafts.length ? '전체 해제' : '전체 선택'}</button></div>
-              <div className="max-h-72 min-w-0 overflow-x-hidden overflow-y-auto">{notionDrafts.map((draft) => { const checked = selectedNotionIds.includes(draft.sourceId); return <label key={draft.sourceId} className="flex min-w-0 cursor-pointer gap-3 border-b border-black/[0.06] p-3 last:border-0 hover:bg-[#fff8f4]"><input type="checkbox" aria-label={`${draft.title} 이관 선택`} checked={checked} onChange={() => setSelectedNotionIds((ids) => checked ? ids.filter((id) => id !== draft.sourceId) : [...ids, draft.sourceId])} className="mt-1 shrink-0 accent-[#ff6b61]" /><span className="min-w-0 flex-1"><b className="block truncate text-sm">{draft.title}</b><span className="mt-1 block break-words text-[11px] leading-4 text-black/45 [overflow-wrap:anywhere]">{notionDateLabel(draft.performanceAt, draft.endDate)} · {draft.artists.join(' · ') || '아티스트 미입력'}<br />{draft.venue || '장소 미입력'} · {draft.paidAmount == null ? '금액 미입력' : `₩${draft.paidAmount.toLocaleString('ko-KR')}`} · 댓글 {draft.reviews?.length || 0}개</span></span></label>; })}</div>
+              <div className="max-h-80 min-w-0 overflow-x-hidden overflow-y-auto">{notionDrafts.map((draft) => { const checked = selectedNotionIds.includes(draft.sourceId); const location = notionLocations[draft.sourceId]; const showingCandidates = notionVenueDraftId === draft.sourceId; const searchingVenue = notionVenueSearchingId === draft.sourceId; return <article key={draft.sourceId} className="min-w-0 border-b border-black/[0.06] p-3 last:border-0 hover:bg-[#fff8f4]"><div className="flex min-w-0 gap-3"><input type="checkbox" aria-label={`${draft.title} 이관 선택`} checked={checked} onChange={() => setSelectedNotionIds((ids) => checked ? ids.filter((id) => id !== draft.sourceId) : [...ids, draft.sourceId])} className="mt-1 shrink-0 accent-[#ff6b61]" /><div className="min-w-0 flex-1"><b className="block truncate text-sm">{draft.title}</b><p className="mt-1 break-words text-[11px] leading-4 text-black/45 [overflow-wrap:anywhere]">{notionDateLabel(draft.performanceAt, draft.endDate)} · {draft.artists.join(' · ') || '아티스트 미입력'}<br />{draft.venue || '장소 미입력'} · {draft.paidAmount == null ? '금액 미입력' : `₩${draft.paidAmount.toLocaleString('ko-KR')}`} · 댓글 {draft.reviews?.length || 0}개</p><div className="mt-2 flex min-w-0 items-start gap-2"><button type="button" onClick={() => void searchNotionVenue(draft)} disabled={!draft.venue || searchingVenue} className="flex shrink-0 items-center gap-1 rounded-full border border-black/10 bg-white px-2.5 py-1.5 text-[10px] font-medium text-black/55 hover:border-[#ff6b61]/40 disabled:opacity-40">{searchingVenue ? <LoaderCircle className="size-3 animate-spin" /> : <MapPin className="size-3" />}{location ? '주소 변경' : '주소 찾기'}</button>{location && <p className="min-w-0 break-words pt-1 text-[10px] leading-4 text-[#5d7b27] [overflow-wrap:anywhere]">{location.address}</p>}</div></div></div>{showingCandidates && notionVenueCandidates.length > 0 && <div className="mt-2 space-y-1 rounded-xl bg-[#f0eee7] p-2">{notionVenueCandidates.map((candidate) => <button key={candidate.id} type="button" onClick={() => chooseNotionLocation(draft, candidate)} className="flex w-full min-w-0 items-start gap-2 rounded-lg p-2 text-left text-[10px] leading-4 hover:bg-white"><MapPin className="mt-0.5 size-3 shrink-0 text-[#d94d44]" /><span className="min-w-0 break-words [overflow-wrap:anywhere]"><b className="block text-black/70">{candidate.name}</b><span className="text-black/45">{candidate.address}</span></span></button>)}</div>}</article>; })}</div>
             </div>}
             {message && <output className="block break-words rounded-xl bg-black/5 p-3 text-xs leading-5 text-[#5d7b27] [overflow-wrap:anywhere]">{message}</output>}
             {notionDrafts.length > 0 && <Button type="button" onClick={saveNotionConcerts} disabled={loading || !selectedNotionIds.length} className="h-12 w-full bg-[#dfff94] text-[#17120f] hover:bg-[#d5f58d]">선택한 {selectedNotionIds.length}개 공연 이관하기</Button>}
