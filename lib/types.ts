@@ -1,5 +1,11 @@
 export type ConcertStatus = 'scheduled' | 'attended';
 
+export type ConcertReview = {
+  id: string;
+  body: string;
+  createdAt: string;
+};
+
 export type Concert = {
   id: string;
   title: string;
@@ -15,7 +21,7 @@ export type Concert = {
   listPrice: number | null;
   paidAmount: number | null;
   status: ConcertStatus;
-  review: string;
+  reviews: ConcertReview[];
   posterUrl: string;
   posterStoragePath?: string;
 };

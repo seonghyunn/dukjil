@@ -24,7 +24,10 @@ export const demoConcerts: Concert[] = [
     listPrice: 154000,
     paidAmount: 148000,
     status: 'attended',
-    review: '바닷바람까지 공연의 일부 같았던 밤. 마지막 떼창을 오래 기억하고 싶다.',
+    reviews: [
+      { id: 'review-1', body: '바닷바람까지 공연의 일부 같았던 밤.', createdAt: '2026-08-08T22:30:00+09:00' },
+      { id: 'review-2', body: '마지막 떼창을 오래 기억하고 싶다.', createdAt: '2026-08-09T09:10:00+09:00' },
+    ],
     posterUrl: 'https://images.unsplash.com/photo-1501386761578-eac5c94b800a?auto=format&fit=crop&w=800&q=85',
   },
   {
@@ -42,7 +45,7 @@ export const demoConcerts: Concert[] = [
     listPrice: 218000,
     paidAmount: 205000,
     status: 'attended',
-    review: '처음 간 해외 페스티벌. 이동은 길었지만 첫 곡이 시작되자 모두 보상받았다.',
+    reviews: [{ id: 'review-3', body: '처음 간 해외 페스티벌. 이동은 길었지만 첫 곡이 시작되자 모두 보상받았다.', createdAt: '2026-08-16T10:00:00+09:00' }],
     posterUrl: 'https://images.unsplash.com/photo-1470229722913-7c0e2dbbafd3?auto=format&fit=crop&w=800&q=85',
   },
   {
@@ -60,7 +63,7 @@ export const demoConcerts: Concert[] = [
     listPrice: 99000,
     paidAmount: 75000,
     status: 'attended',
-    review: '',
+    reviews: [],
     posterUrl: 'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?auto=format&fit=crop&w=800&q=85',
   },
   {
@@ -78,7 +81,7 @@ export const demoConcerts: Concert[] = [
     listPrice: 154000,
     paidAmount: null,
     status: 'scheduled',
-    review: '',
+    reviews: [],
     posterUrl: 'https://images.unsplash.com/photo-1506157786151-b8491531f063?auto=format&fit=crop&w=800&q=85',
   },
 ];

@@ -11,12 +11,12 @@ import type { Concert, GeocodeCandidate, ImportDraft } from '@/lib/types';
 type Props = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onSave: (concert: Concert, imageFile?: File) => Promise<void>;
+  onSave: (concerts: Concert[], imageFile?: File) => Promise<void>;
 };
 
 const emptyForm = {
   title: '', artists: '', performanceAt: '2026-08-31T18:00', venue: '', address: '',
-  bookingProvider: '직접 입력', sourceUrl: '', listPrice: '', paidAmount: '', review: '', posterUrl: '',
+  bookingProvider: '직접 입력', sourceUrl: '', listPrice: '', paidAmount: '', initialReview: '', posterUrl: '',
 };
 
 export function AddConcertDialog({ open, onOpenChange, onSave }: Props) {
@@ -27,13 +27,14 @@ export function AddConcertDialog({ open, onOpenChange, onSave }: Props) {
   const [candidates, setCandidates] = useState<GeocodeCandidate[]>([]);
   const [imageFile, setImageFile] = useState<File>();
   const [dateCandidates, setDateCandidates] = useState<string[]>([]);
+  const [selectedDates, setSelectedDates] = useState<string[]>([]);
   const [priceCandidates, setPriceCandidates] = useState<number[]>([]);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
 
   useEffect(() => {
     if (!open) {
-      setForm(emptyForm); setCoords(null); setCandidates([]); setImageFile(undefined); setDateCandidates([]); setPriceCandidates([]); setMessage('');
+      setForm(emptyForm); setCoords(null); setCandidates([]); setImageFile(undefined); setDateCandidates([]); setSelectedDates([]); setPriceCandidates([]); setMessage('');
     }
   }, [open]);
 
@@ -58,6 +59,7 @@ export function AddConcertDialog({ open, onOpenChange, onSave }: Props) {
         listPrice: data.priceCandidates[0]?.toString() || prev.listPrice,
       }));
       setDateCandidates(data.dateCandidates || []);
+      setSelectedDates(data.dateCandidates?.[0] ? [data.dateCandidates[0]] : []);
       setPriceCandidates(data.priceCandidates || []);
       setMessage(data.warnings.join(' ') || '정보를 불러왔어요. 날짜와 가격을 꼭 확인해 주세요.');
       setMode('direct');
@@ -87,16 +89,17 @@ export function AddConcertDialog({ open, onOpenChange, onSave }: Props) {
       setMessage('공연명, 아티스트, 일시와 장소를 입력해 주세요.'); return;
     }
     setLoading(true);
-    const concert: Concert = {
+    const performances = selectedDates.length ? selectedDates : [new Date(form.performanceAt).toISOString()];
+    const concerts: Concert[] = performances.map((performanceAt) => ({
       id: crypto.randomUUID(), title: form.title.trim(),
       artists: form.artists.split(',').map((value) => value.trim()).filter(Boolean),
-      performanceAt: new Date(form.performanceAt).toISOString(), venue: form.venue.trim(),
+      performanceAt, venue: form.venue.trim(),
       address: form.address.trim(), latitude: coords?.latitude ?? null, longitude: coords?.longitude ?? null,
       countryCode: coords?.countryCode || 'KR', bookingProvider: form.bookingProvider.trim(), sourceUrl: form.sourceUrl.trim(),
       listPrice: form.listPrice === '' ? null : Number(form.listPrice), paidAmount: form.paidAmount === '' ? null : Number(form.paidAmount),
-      status, review: form.review.trim(), posterUrl: form.posterUrl.trim(),
-    };
-    try { await onSave(concert, imageFile); onOpenChange(false); }
+      status, reviews: form.initialReview.trim() ? [{ id: crypto.randomUUID(), body: form.initialReview.trim(), createdAt: new Date().toISOString() }] : [], posterUrl: form.posterUrl.trim(),
+    }));
+    try { await onSave(concerts, imageFile); onOpenChange(false); }
     catch { setMessage('저장하지 못했어요. 잠시 후 다시 시도해 주세요.'); }
     finally { setLoading(false); }
   }
@@ -122,12 +125,12 @@ export function AddConcertDialog({ open, onOpenChange, onSave }: Props) {
           </div>
         ) : (
           <form onSubmit={submit} className="space-y-4 px-5 pb-6">
-            {dateCandidates.length > 1 && <CandidateGroup label="공연 회차 후보">{dateCandidates.map((candidate) => <button key={candidate} type="button" onClick={() => update('performanceAt', toDateTimeInput(candidate))} className={`rounded-full border px-3 py-2 text-xs ${form.performanceAt === toDateTimeInput(candidate) ? 'border-[#dfff94] bg-[#dfff94] text-black' : 'border-black/15 text-black/60'}`}>{new Intl.DateTimeFormat('ko-KR', { month: 'long', day: 'numeric', weekday: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Seoul' }).format(new Date(candidate))}</button>)}</CandidateGroup>}
+            {dateCandidates.length > 1 && <CandidateGroup label={`공연 회차 선택 · ${selectedDates.length}개 선택됨`}>{dateCandidates.map((candidate) => { const checked = selectedDates.includes(candidate); return <button key={candidate} type="button" aria-pressed={checked} onClick={() => setSelectedDates((dates) => checked ? dates.filter((date) => date !== candidate) : [...dates, candidate])} className={`rounded-full border px-3 py-2 text-xs ${checked ? 'border-[#dfff94] bg-[#dfff94] text-black' : 'border-black/15 text-black/60'}`}>{checked ? '✓ ' : ''}{new Intl.DateTimeFormat('ko-KR', { month: 'long', day: 'numeric', weekday: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Seoul' }).format(new Date(candidate))}</button>; })}<p className="basis-full pt-1 text-[11px] text-black/40">선택한 회차마다 공연 장부에 별도 기록이 생겨요.</p></CandidateGroup>}
             {priceCandidates.length > 1 && <CandidateGroup label="가격 후보">{priceCandidates.map((candidate) => <button key={candidate} type="button" onClick={() => update('listPrice', candidate.toString())} className={`rounded-full border px-3 py-2 text-xs ${form.listPrice === candidate.toString() ? 'border-[#dfff94] bg-[#dfff94] text-black' : 'border-black/15 text-black/60'}`}>₩{candidate.toLocaleString('ko-KR')}</button>)}</CandidateGroup>}
             <div className="grid gap-4 sm:grid-cols-2">
               <Field label="공연명"><Input value={form.title} onChange={(e) => update('title', e.target.value)} /></Field>
               <Field label="아티스트"><Input value={form.artists} onChange={(e) => update('artists', e.target.value)} placeholder="쉼표로 구분" /></Field>
-              <Field label="공연 일시"><Input type="datetime-local" value={form.performanceAt} onChange={(e) => update('performanceAt', e.target.value)} /></Field>
+              <Field label={selectedDates.length > 1 ? '대표 공연 일시' : '공연 일시'}><Input type="datetime-local" value={form.performanceAt} onChange={(e) => { update('performanceAt', e.target.value); setSelectedDates([]); }} /></Field>
               <Field label="예매처"><Input value={form.bookingProvider} onChange={(e) => update('bookingProvider', e.target.value)} /></Field>
               <Field label="공연장"><Input value={form.venue} onChange={(e) => update('venue', e.target.value)} /></Field>
               <Field label="주소"><div className="flex gap-2"><Input value={form.address} onChange={(e) => update('address', e.target.value)} /><Button type="button" variant="outline" size="icon-lg" aria-label="위치 찾기" onClick={findVenue}><MapPin /></Button></div></Field>
@@ -138,9 +141,9 @@ export function AddConcertDialog({ open, onOpenChange, onSave }: Props) {
             <Field label="공식 이미지 URL"><Input value={form.posterUrl} onChange={(e) => update('posterUrl', e.target.value)} placeholder="자동 추출 또는 직접 입력" /></Field>
             <label className="flex cursor-pointer items-center gap-3 rounded-2xl border border-dashed border-black/15 p-4 text-sm text-black/60 hover:border-black/30"><ImagePlus className="size-5" /><span>{imageFile?.name || '이미지가 없으면 직접 추가 (최대 5MB)'}</span><input type="file" accept="image/jpeg,image/png,image/webp" className="sr-only" onChange={(e) => setImageFile(e.target.files?.[0])} /></label>
             <div className="grid grid-cols-2 gap-2"><Button type="button" variant={status === 'scheduled' ? 'default' : 'outline'} onClick={() => setStatus('scheduled')}>예정</Button><Button type="button" variant={status === 'attended' ? 'default' : 'outline'} onClick={() => setStatus('attended')}>관람 완료</Button></div>
-            <Field label="짧은 후기"><Textarea value={form.review} onChange={(e) => update('review', e.target.value)} maxLength={5000} placeholder="그날의 마음을 남겨보세요." className="min-h-24" /></Field>
+            <Field label="첫 후기 (선택)"><Textarea value={form.initialReview} onChange={(e) => update('initialReview', e.target.value)} maxLength={2000} placeholder="저장 후 댓글처럼 후기를 계속 남길 수 있어요." className="min-h-24" /></Field>
             {message && <p role="status" className="rounded-xl bg-black/5 p-3 text-xs leading-5 text-[#5d7b27]">{message}</p>}
-            <Button type="submit" className="h-12 w-full bg-[#ff6b61] text-[#17120f] hover:bg-[#ff827a]" disabled={loading}>{loading && <LoaderCircle className="animate-spin" />}공연 저장하기</Button>
+            <Button type="submit" className="h-12 w-full bg-[#ff6b61] text-[#17120f] hover:bg-[#ff827a]" disabled={loading}>{loading && <LoaderCircle className="animate-spin" />}{selectedDates.length > 1 ? `${selectedDates.length}개 회차 각각 저장하기` : '공연 저장하기'}</Button>
           </form>
         )}
         {mode === 'url' && message && <p role="status" className="mx-5 mb-5 rounded-xl bg-black/5 p-3 text-xs text-[#5d7b27]">{message}</p>}
