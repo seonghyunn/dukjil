@@ -24,10 +24,22 @@ export type Concert = {
   rating: number | null;
   reviews: ConcertReview[];
   setlist: string[];
+  setlistSourceId?: string;
+  setlistSourceUrl?: string;
   posterUrl: string;
   officialPosterUrl?: string;
   posterSource?: 'official' | 'upload';
   posterStoragePath?: string;
+};
+
+export type SetlistCandidate = {
+  id: string;
+  url: string;
+  eventDate: string;
+  artist: string;
+  venue: string;
+  city: string;
+  songs: string[];
 };
 
 export type Profile = {

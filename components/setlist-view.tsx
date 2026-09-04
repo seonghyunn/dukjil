@@ -1,13 +1,17 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   CalendarDays,
+  Check,
   Disc3,
+  ExternalLink,
   ListMusic,
+  LoaderCircle,
   Mic2,
   Music2,
   Save,
+  Search,
 } from 'lucide-react';
 import { PosterImage } from './poster-image';
 import { Button } from '@/components/ui/button';
@@ -19,15 +23,18 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
-import type { Concert } from '@/lib/types';
+import type { Concert, SetlistCandidate } from '@/lib/types';
 
 type Props = {
   concerts: Concert[];
   onSave: (concert: Concert, songs: string[]) => Promise<void>;
+  onLink: (concert: Concert, candidate: SetlistCandidate) => Promise<void>;
 };
 
-export function SetlistView({ concerts, onSave }: Props) {
-  const attended = concerts
+export function SetlistView({ concerts, onSave, onLink }: Props) {
+  const [remoteSongs, setRemoteSongs] = useState<Record<string, string[]>>({});
+  const hydratedConcerts = concerts.map((concert) => remoteSongs[concert.id] ? { ...concert, setlist: remoteSongs[concert.id] } : concert);
+  const attended = hydratedConcerts
     .filter((concert) => concert.status === 'attended')
     .sort((a, b) => b.performanceAt.localeCompare(a.performanceAt));
   const artists = [
@@ -37,6 +44,25 @@ export function SetlistView({ concerts, onSave }: Props) {
   const [editing, setEditing] = useState<Concert | null>(null);
   const [text, setText] = useState('');
   const [saving, setSaving] = useState(false);
+  const [searching, setSearching] = useState(false);
+  const [candidates, setCandidates] = useState<SetlistCandidate[]>([]);
+  const [searchMessage, setSearchMessage] = useState('');
+
+  useEffect(() => {
+    const linked = concerts.filter((concert) => concert.setlistSourceId && !remoteSongs[concert.id]);
+    if (!linked.length) return;
+    let active = true;
+    void Promise.all(linked.map(async (concert) => {
+      const response = await fetch('/api/import-setlist', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ setlistId: concert.setlistSourceId }) });
+      if (!response.ok) return null;
+      const payload = await response.json() as { candidates?: SetlistCandidate[] };
+      return payload.candidates?.[0] ? [concert.id, payload.candidates[0].songs] as const : null;
+    })).then((results) => {
+      if (!active) return;
+      setRemoteSongs((current) => Object.fromEntries([...Object.entries(current), ...results.filter((result): result is readonly [string, string[]] => Boolean(result))]));
+    });
+    return () => { active = false; };
+  }, [concerts, remoteSongs]);
 
   const scoped =
     artist === 'all'
@@ -70,11 +96,39 @@ export function SetlistView({ concerts, onSave }: Props) {
 
   function openEditor(concert: Concert) {
     setEditing(concert);
+    setCandidates([]);
+    setSearchMessage('');
     setText(
       (concert.setlist || [])
         .map((song, index) => `${index + 1}. ${song}`)
         .join('\n'),
     );
+  }
+
+  async function searchOfficialSetlist() {
+    if (!editing?.artists[0]) { setSearchMessage('아티스트명이 있어야 검색할 수 있어요.'); return; }
+    setSearching(true);
+    setSearchMessage('');
+    try {
+      const response = await fetch('/api/import-setlist', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ artist: editing.artists[0], performanceAt: editing.performanceAt, venue: editing.venue }) });
+      const payload = await response.json() as { candidates?: SetlistCandidate[]; error?: string };
+      if (!response.ok) throw new Error(payload.error || '셋리스트를 검색하지 못했어요.');
+      const next = payload.candidates || [];
+      setCandidates(next);
+      setSearchMessage(next.length ? `${next.length}개의 후보를 찾았어요.` : '해당 날짜의 등록된 셋리스트를 찾지 못했어요. 직접 입력할 수 있어요.');
+    } catch (error) {
+      setSearchMessage(error instanceof Error ? error.message : '셋리스트를 검색하지 못했어요.');
+    } finally { setSearching(false); }
+  }
+
+  async function chooseCandidate(candidate: SetlistCandidate) {
+    if (!editing) return;
+    setSaving(true);
+    try {
+      await onLink(editing, candidate);
+      setRemoteSongs((current) => ({ ...current, [editing.id]: candidate.songs }));
+      setEditing(null);
+    } finally { setSaving(false); }
   }
 
   async function save() {
@@ -211,6 +265,7 @@ export function SetlistView({ concerts, onSave }: Props) {
                     ? `${concert.setlist.length}곡 기록됨 · 수정`
                     : '셋리스트 기록하기'}
                 </span>
+                {concert.setlistSourceUrl && <span className="mt-1 block text-[10px] text-black/35">setlist.fm 연동됨</span>}
               </span>
             </button>
           ))}
@@ -235,9 +290,15 @@ export function SetlistView({ concerts, onSave }: Props) {
             </DialogDescription>
           </DialogHeader>
           <div className="rounded-2xl bg-[var(--theme-highlight)]/45 p-3 text-xs leading-5 text-black/55">
-            예매처 페이지에는 셋리스트가 없는 경우가 많아, 현재는 공연 뒤 직접
-            입력하거나 복사한 목록을 붙여넣는 방식이에요.
+            아티스트와 공연 날짜로 setlist.fm을 검색합니다. 결과가 없거나 다른 회차라면 아래에서 직접 입력할 수 있어요.
           </div>
+          <Button type="button" variant="outline" onClick={searchOfficialSetlist} disabled={searching || saving} className="h-11 w-full border-[var(--theme-accent)]/30 bg-white">
+            {searching ? <LoaderCircle className="animate-spin" /> : <Search />}{searching ? '공식 셋리스트 검색 중…' : 'setlist.fm에서 찾아보기'}
+          </Button>
+          {searchMessage && <output className="block text-xs leading-5 text-black/50">{searchMessage}</output>}
+          {candidates.length > 0 && <div className="max-h-52 space-y-2 overflow-y-auto rounded-2xl bg-black/[0.035] p-2">{candidates.map((candidate) => <button key={candidate.id} type="button" onClick={() => void chooseCandidate(candidate)} disabled={saving} className="flex w-full min-w-0 items-center gap-3 rounded-xl bg-white p-3 text-left shadow-sm hover:ring-1 hover:ring-[var(--theme-accent)]"><span className="grid size-8 shrink-0 place-items-center rounded-full bg-[var(--theme-highlight)]"><Check className="size-4" /></span><span className="min-w-0 flex-1"><b className="block truncate text-sm">{candidate.artist}</b><span className="block truncate text-[11px] text-black/45">{candidate.eventDate} · {candidate.venue}{candidate.city ? `, ${candidate.city}` : ''}</span><span className="mt-1 block text-[11px] font-semibold text-[var(--theme-accent-deep)]">{candidate.songs.length}곡 선택</span></span></button>)}</div>}
+          {editing?.setlistSourceUrl && <a href={editing.setlistSourceUrl} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-xs text-black/45 underline"><ExternalLink className="size-3" />현재 연결된 셋리스트 출처 보기</a>}
+          <div className="flex items-center gap-3 text-[10px] uppercase tracking-wider text-black/30"><span className="h-px flex-1 bg-black/10" /><span>또는 직접 입력</span><span className="h-px flex-1 bg-black/10" /></div>
           <Textarea
             value={text}
             onChange={(event) => setText(event.target.value)}

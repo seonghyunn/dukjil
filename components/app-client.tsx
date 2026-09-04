@@ -58,7 +58,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
 import { demoConcerts, demoProfile } from '@/lib/demo-data';
 import { isSupabaseConfigured, isTestMode, supabase } from '@/lib/supabase';
-import type { Concert, ImportDraft, Profile } from '@/lib/types';
+import type { Concert, ImportDraft, Profile, SetlistCandidate } from '@/lib/types';
 
 type View = 'home' | 'calendar' | 'map' | 'setlist';
 const CHART_COLORS = [
@@ -519,12 +519,14 @@ export function AppClient() {
   }
 
   async function saveSetlist(concert: Concert, songs: string[]) {
-    const next = { ...concert, setlist: songs };
+    const next = { ...concert, setlist: songs, setlistSourceId: undefined, setlistSourceUrl: undefined };
     setConcerts((items) =>
       items.map((item) => (item.id === concert.id ? next : item)),
     );
     if (selected?.id === concert.id) setSelected(next);
     if (supabase && session?.user) {
+      const sourceCleared = await supabase.from('concerts').update({ setlist_source_id: null, setlist_source_url: null }).eq('id', concert.id);
+      if (sourceCleared.error) throw sourceCleared.error;
       const removed = await supabase
         .from('concert_setlist_songs')
         .delete()
@@ -543,6 +545,20 @@ export function AppClient() {
           );
         if (inserted.error) throw inserted.error;
       }
+    }
+  }
+
+  async function linkSetlist(concert: Concert, candidate: SetlistCandidate) {
+    const next = { ...concert, setlist: candidate.songs, setlistSourceId: candidate.id, setlistSourceUrl: candidate.url };
+    setConcerts((items) => items.map((item) => item.id === concert.id ? next : item));
+    if (selected?.id === concert.id) setSelected(next);
+    if (supabase && session?.user) {
+      const [sourceSaved, manualRemoved] = await Promise.all([
+        supabase.from('concerts').update({ setlist_source_id: candidate.id, setlist_source_url: candidate.url }).eq('id', concert.id),
+        supabase.from('concert_setlist_songs').delete().eq('concert_id', concert.id),
+      ]);
+      if (sourceSaved.error) throw sourceSaved.error;
+      if (manualRemoved.error) throw manualRemoved.error;
     }
   }
 
@@ -598,7 +614,7 @@ export function AppClient() {
           />
         )}
         {view === 'setlist' && (
-          <SetlistView concerts={concerts} onSave={saveSetlist} />
+          <SetlistView concerts={concerts} onSave={saveSetlist} onLink={linkSetlist} />
         )}
         <button
           aria-label="테마 색상 선택"
@@ -1961,6 +1977,8 @@ function rowToConcert(row: any, posterUrl: string, setlist: string[]): Concert {
         a.createdAt.localeCompare(b.createdAt),
       ),
     setlist,
+    setlistSourceId: row.setlist_source_id || undefined,
+    setlistSourceUrl: row.setlist_source_url || undefined,
     posterUrl,
     officialPosterUrl: row.official_poster_url || row.poster_url || '',
     posterSource:
