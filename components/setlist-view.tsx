@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from 'react';
 import {
+  ArrowDown,
+  ArrowUp,
   CalendarDays,
   Check,
   Disc3,
@@ -10,8 +12,10 @@ import {
   LoaderCircle,
   Mic2,
   Music2,
+  Plus,
   Save,
   Search,
+  Trash2,
 } from 'lucide-react';
 import { PosterImage } from './poster-image';
 import { Button } from '@/components/ui/button';
@@ -22,7 +26,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { Textarea } from '@/components/ui/textarea';
+import { Input } from '@/components/ui/input';
 import type { Concert, SetlistCandidate } from '@/lib/types';
 
 type ArtistMatch = { mbid: string; name: string; englishName: string; score: number };
@@ -45,14 +49,15 @@ export function SetlistView({ concerts, onSave, onLink }: Props) {
   ].sort((a, b) => a.localeCompare(b, 'ko'));
   const [artist, setArtist] = useState('all');
   const [editing, setEditing] = useState<Concert | null>(null);
-  const [text, setText] = useState('');
+  const [songs, setSongs] = useState<string[]>([]);
+  const [selectedCandidate, setSelectedCandidate] = useState<SetlistCandidate | null>(null);
   const [saving, setSaving] = useState(false);
   const [searching, setSearching] = useState(false);
   const [candidates, setCandidates] = useState<SetlistCandidate[]>([]);
   const [searchMessage, setSearchMessage] = useState('');
 
   useEffect(() => {
-    const linked = concerts.filter((concert) => concert.setlistSourceId && !remoteSongs[concert.id]);
+    const linked = concerts.filter((concert) => concert.setlistSourceId && !concert.setlist.length && !remoteSongs[concert.id]);
     if (!linked.length) return;
     let active = true;
     void Promise.all(linked.map(async (concert) => {
@@ -101,11 +106,16 @@ export function SetlistView({ concerts, onSave, onLink }: Props) {
     setEditing(concert);
     setCandidates([]);
     setSearchMessage('');
-    setText(
-      (concert.setlist || [])
-        .map((song, index) => `${index + 1}. ${song}`)
-        .join('\n'),
-    );
+    setSongs([...(concert.setlist || [])]);
+    setSelectedCandidate(concert.setlistSourceId ? {
+      id: concert.setlistSourceId,
+      url: concert.setlistSourceUrl || '',
+      eventDate: concert.performanceAt,
+      artist: concert.artists[0] || '',
+      venue: concert.venue,
+      city: '',
+      songs: [...(concert.setlist || [])],
+    } : null);
   }
 
   async function searchOfficialSetlist() {
@@ -131,26 +141,52 @@ export function SetlistView({ concerts, onSave, onLink }: Props) {
     } finally { setSearching(false); }
   }
 
-  async function chooseCandidate(candidate: SetlistCandidate) {
-    if (!editing) return;
-    setSaving(true);
-    try {
-      await onLink(editing, candidate);
-      setRemoteSongs((current) => ({ ...current, [editing.id]: candidate.songs }));
-      setEditing(null);
-    } finally { setSaving(false); }
+  function chooseCandidate(candidate: SetlistCandidate) {
+    setSongs([...candidate.songs]);
+    setSelectedCandidate(candidate);
+    setCandidates([]);
+    setSearchMessage(`${candidate.songs.length}곡을 편집표에 불러왔어요. 확인한 뒤 저장해 주세요.`);
   }
 
   async function save() {
     if (!editing) return;
-    const songs = parseSongs(text);
+    const cleanedSongs = songs.map((song) => song.trim()).filter(Boolean).slice(0, 200);
     setSaving(true);
     try {
-      await onSave(editing, songs);
+      if (selectedCandidate && cleanedSongs.length) {
+        const linked = { ...selectedCandidate, songs: cleanedSongs };
+        await onLink(editing, linked);
+        setRemoteSongs((current) => ({ ...current, [editing.id]: cleanedSongs }));
+      } else {
+        await onSave(editing, cleanedSongs);
+        setRemoteSongs((current) => ({ ...current, [editing.id]: cleanedSongs }));
+      }
       setEditing(null);
     } finally {
       setSaving(false);
     }
+  }
+
+  function updateSong(index: number, value: string) {
+    setSongs((current) => current.map((song, songIndex) => songIndex === index ? value : song));
+  }
+
+  function insertSong(index: number) {
+    setSongs((current) => [...current.slice(0, index), '', ...current.slice(index)].slice(0, 200));
+  }
+
+  function removeSong(index: number) {
+    setSongs((current) => current.filter((_, songIndex) => songIndex !== index));
+  }
+
+  function moveSong(index: number, direction: -1 | 1) {
+    setSongs((current) => {
+      const target = index + direction;
+      if (target < 0 || target >= current.length) return current;
+      const next = [...current];
+      [next[index], next[target]] = [next[target], next[index]];
+      return next;
+    });
   }
 
   return (
@@ -295,8 +331,7 @@ export function SetlistView({ concerts, onSave, onLink }: Props) {
           <DialogHeader>
             <DialogTitle>{editing?.title}</DialogTitle>
             <DialogDescription>
-              한 줄에 한 곡씩 입력하세요. 번호나 글머리표는 저장할 때 자동으로
-              정리돼요.
+              검색한 셋리스트를 불러오거나 곡을 직접 추가한 뒤, 행별로 편집해 저장하세요.
             </DialogDescription>
           </DialogHeader>
           <div className="rounded-2xl bg-[var(--theme-highlight)]/45 p-3 text-xs leading-5 text-black/55">
@@ -306,20 +341,32 @@ export function SetlistView({ concerts, onSave, onLink }: Props) {
             {searching ? <LoaderCircle className="animate-spin" /> : <Search />}{searching ? '공식 셋리스트 검색 중…' : 'setlist.fm에서 찾아보기'}
           </Button>
           {searchMessage && <output className="block text-xs leading-5 text-black/50">{searchMessage}</output>}
-          {candidates.length > 0 && <div className="max-h-52 space-y-2 overflow-y-auto rounded-2xl bg-black/[0.035] p-2">{candidates.map((candidate) => <button key={candidate.id} type="button" onClick={() => void chooseCandidate(candidate)} disabled={saving} className="flex w-full min-w-0 items-center gap-3 rounded-xl bg-white p-3 text-left shadow-sm hover:ring-1 hover:ring-[var(--theme-accent)]"><span className="grid size-8 shrink-0 place-items-center rounded-full bg-[var(--theme-highlight)]"><Check className="size-4" /></span><span className="min-w-0 flex-1"><b className="block truncate text-sm">{editing?.title}</b><span className="block truncate text-[11px] text-black/45">{candidate.eventDate} · {candidate.venue}{candidate.city ? `, ${candidate.city}` : ''}</span><span className="mt-1 block text-[11px] font-semibold text-[var(--theme-accent-deep)]">{candidate.songs.length}곡 선택</span></span></button>)}</div>}
+          {candidates.length > 0 && <div className="max-h-52 space-y-2 overflow-y-auto rounded-2xl bg-black/[0.035] p-2">{candidates.map((candidate) => <button key={candidate.id} type="button" onClick={() => chooseCandidate(candidate)} disabled={saving} className="flex w-full min-w-0 items-center gap-3 rounded-xl bg-white p-3 text-left shadow-sm hover:ring-1 hover:ring-[var(--theme-accent)]"><span className="grid size-8 shrink-0 place-items-center rounded-full bg-[var(--theme-highlight)]"><Check className="size-4" /></span><span className="min-w-0 flex-1"><b className="block truncate text-sm">{editing?.title}</b><span className="block truncate text-[11px] text-black/45">{candidate.eventDate} · {candidate.venue}{candidate.city ? `, ${candidate.city}` : ''}</span><span className="mt-1 block text-[11px] font-semibold text-[var(--theme-accent-deep)]">{candidate.songs.length}곡 편집표로 불러오기</span></span></button>)}</div>}
           {editing?.setlistSourceUrl && <a href={editing.setlistSourceUrl} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-xs text-black/45 underline"><ExternalLink className="size-3" />현재 연결된 셋리스트 출처 보기</a>}
-          <div className="flex items-center gap-3 text-[10px] uppercase tracking-wider text-black/30"><span className="h-px flex-1 bg-black/10" /><span>또는 직접 입력</span><span className="h-px flex-1 bg-black/10" /></div>
-          <Textarea
-            value={text}
-            onChange={(event) => setText(event.target.value)}
-            placeholder={'1. 첫 번째 곡\n2. 두 번째 곡\n앵콜 곡'}
-            className="min-h-64 resize-y"
-          />
+          <div className="flex items-center gap-3 text-[10px] uppercase tracking-wider text-black/30"><span className="h-px flex-1 bg-black/10" /><span>곡별 편집</span><span className="h-px flex-1 bg-black/10" /></div>
+          <div className="overflow-hidden rounded-2xl border border-black/10 bg-white">
+            <div className="grid grid-cols-[2rem_minmax(0,1fr)_auto] items-center gap-2 border-b border-black/[0.06] bg-black/[0.025] px-2 py-2 text-[10px] font-semibold text-black/35">
+              <span className="text-center">순서</span><span>곡명</span><span className="pr-2">편집</span>
+            </div>
+            {songs.length ? <ol className="max-h-72 divide-y divide-black/[0.06] overflow-y-auto">{songs.map((song, index) => (
+              <li key={`${index}-${songs.length}`} className="grid grid-cols-[2rem_minmax(0,1fr)_auto] items-center gap-2 px-2 py-2">
+                <span className="text-center text-xs font-semibold text-black/35">{index + 1}</span>
+                <Input value={song} onChange={(event) => updateSong(index, event.target.value)} placeholder="곡명을 입력하세요" aria-label={`${index + 1}번 곡명`} className="h-9 min-w-0 border-black/10 bg-[#fbfaf6] px-3 text-sm" />
+                <span className="flex items-center">
+                  <button type="button" onClick={() => moveSong(index, -1)} disabled={index === 0} aria-label={`${index + 1}번 곡 위로 이동`} className="grid size-8 place-items-center rounded-lg text-black/40 hover:bg-black/[0.05] disabled:opacity-20"><ArrowUp className="size-3.5" /></button>
+                  <button type="button" onClick={() => moveSong(index, 1)} disabled={index === songs.length - 1} aria-label={`${index + 1}번 곡 아래로 이동`} className="grid size-8 place-items-center rounded-lg text-black/40 hover:bg-black/[0.05] disabled:opacity-20"><ArrowDown className="size-3.5" /></button>
+                  <button type="button" onClick={() => insertSong(index + 1)} disabled={songs.length >= 200} aria-label={`${index + 1}번 곡 다음에 추가`} className="grid size-8 place-items-center rounded-lg text-[var(--theme-accent-deep)] hover:bg-[var(--theme-highlight)]"><Plus className="size-3.5" /></button>
+                  <button type="button" onClick={() => removeSong(index)} aria-label={`${index + 1}번 곡 삭제`} className="grid size-8 place-items-center rounded-lg text-red-500/70 hover:bg-red-50"><Trash2 className="size-3.5" /></button>
+                </span>
+              </li>
+            ))}</ol> : <button type="button" onClick={() => insertSong(0)} className="flex w-full items-center justify-center gap-2 px-4 py-8 text-sm text-black/40 hover:bg-black/[0.02]"><Plus className="size-4" />첫 곡 추가하기</button>}
+          </div>
           <div className="flex items-center justify-between text-xs text-black/35">
-            <span>{parseSongs(text).length}곡</span>
+            <button type="button" onClick={() => insertSong(songs.length)} disabled={songs.length >= 200} className="flex items-center gap-1 font-semibold text-[var(--theme-accent-deep)] disabled:opacity-40"><Plus className="size-3.5" />맨 아래에 곡 추가</button>
+            <span>{songs.filter((song) => song.trim()).length}곡</span>
             <button
               type="button"
-              onClick={() => setText('')}
+              onClick={() => { setSongs([]); setSelectedCandidate(null); }}
               className="hover:text-black"
             >
               모두 지우기
@@ -338,14 +385,6 @@ export function SetlistView({ concerts, onSave, onLink }: Props) {
       </Dialog>
     </section>
   );
-}
-
-function parseSongs(value: string) {
-  return value
-    .split(/\r?\n/)
-    .map((line) => line.replace(/^\s*(?:\d+[.)]|[-*•])\s*/, '').trim())
-    .filter(Boolean)
-    .slice(0, 200);
 }
 
 function readArtistAliases(): Record<string, CachedArtistMatch> {

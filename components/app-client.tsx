@@ -553,12 +553,21 @@ export function AppClient() {
     setConcerts((items) => items.map((item) => item.id === concert.id ? next : item));
     if (selected?.id === concert.id) setSelected(next);
     if (supabase && session?.user) {
-      const [sourceSaved, manualRemoved] = await Promise.all([
-        supabase.from('concerts').update({ setlist_source_id: candidate.id, setlist_source_url: candidate.url }).eq('id', concert.id),
-        supabase.from('concert_setlist_songs').delete().eq('concert_id', concert.id),
-      ]);
+      const sourceSaved = await supabase.from('concerts').update({ setlist_source_id: candidate.id, setlist_source_url: candidate.url }).eq('id', concert.id);
       if (sourceSaved.error) throw sourceSaved.error;
+      const manualRemoved = await supabase.from('concert_setlist_songs').delete().eq('concert_id', concert.id);
       if (manualRemoved.error) throw manualRemoved.error;
+      if (candidate.songs.length) {
+        const inserted = await supabase.from('concert_setlist_songs').insert(
+          candidate.songs.map((title, index) => ({
+            concert_id: concert.id,
+            user_id: session.user.id,
+            position: index + 1,
+            title,
+          })),
+        );
+        if (inserted.error) throw inserted.error;
+      }
     }
   }
 
