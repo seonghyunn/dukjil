@@ -25,6 +25,9 @@ import {
 import { Textarea } from '@/components/ui/textarea';
 import type { Concert, SetlistCandidate } from '@/lib/types';
 
+type ArtistMatch = { mbid: string; name: string; englishName: string; score: number };
+type CachedArtistMatch = { mbid: string; name: string };
+
 type Props = {
   concerts: Concert[];
   onSave: (concert: Concert, songs: string[]) => Promise<void>;
@@ -106,16 +109,23 @@ export function SetlistView({ concerts, onSave, onLink }: Props) {
   }
 
   async function searchOfficialSetlist() {
-    if (!editing?.artists[0]) { setSearchMessage('아티스트명이 있어야 검색할 수 있어요.'); return; }
+    if (!editing) return;
+    const original = editing.artists[0] || titleArtistHint(editing.title);
+    if (!original) { setSearchMessage('공연 정보에서 아티스트를 확인하지 못했어요.'); return; }
     setSearching(true);
     setSearchMessage('');
     try {
-      const response = await fetch('/api/import-setlist', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ artist: editing.artists[0], performanceAt: editing.performanceAt, venue: editing.venue }) });
-      const payload = await response.json() as { candidates?: SetlistCandidate[]; error?: string };
+      const resolved = await resolveArtistForSearch(original, editing.title);
+      const response = await fetch('/api/import-setlist', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ artist: original, artistMbid: resolved?.mbid, title: editing.title, performanceAt: editing.performanceAt, venue: editing.venue }) });
+      const rawPayload = await response.text();
+      const payload = (rawPayload ? JSON.parse(rawPayload) : {}) as { candidates?: SetlistCandidate[]; artistMatches?: ArtistMatch[]; error?: string };
       if (!response.ok) throw new Error(payload.error || '셋리스트를 검색하지 못했어요.');
       const next = payload.candidates || [];
+      const matches = payload.artistMatches || [];
       setCandidates(next);
-      setSearchMessage(next.length ? `${next.length}개의 후보를 찾았어요.` : '해당 날짜의 등록된 셋리스트를 찾지 못했어요. 직접 입력할 수 있어요.');
+      if (resolved) saveArtistAlias(original, resolved);
+      else if (matches[0]?.mbid) saveArtistAlias(original, { mbid: matches[0].mbid, name: matches[0].englishName });
+      setSearchMessage(next.length ? `${next.length}개의 공연 후보를 찾았어요.` : '해당 날짜에 등록된 셋리스트는 찾지 못했어요.');
     } catch (error) {
       setSearchMessage(error instanceof Error ? error.message : '셋리스트를 검색하지 못했어요.');
     } finally { setSearching(false); }
@@ -290,13 +300,13 @@ export function SetlistView({ concerts, onSave, onLink }: Props) {
             </DialogDescription>
           </DialogHeader>
           <div className="rounded-2xl bg-[var(--theme-highlight)]/45 p-3 text-xs leading-5 text-black/55">
-            아티스트와 공연 날짜로 setlist.fm을 검색합니다. 결과가 없거나 다른 회차라면 아래에서 직접 입력할 수 있어요.
+            화면의 공연명과 아티스트명은 바꾸지 않고, 검색할 때만 setlist.fm에 맞는 아티스트를 내부에서 찾아 연결해요. 결과가 없거나 다른 회차라면 아래에서 직접 입력할 수 있어요.
           </div>
           <Button type="button" variant="outline" onClick={searchOfficialSetlist} disabled={searching || saving} className="h-11 w-full border-[var(--theme-accent)]/30 bg-white">
             {searching ? <LoaderCircle className="animate-spin" /> : <Search />}{searching ? '공식 셋리스트 검색 중…' : 'setlist.fm에서 찾아보기'}
           </Button>
           {searchMessage && <output className="block text-xs leading-5 text-black/50">{searchMessage}</output>}
-          {candidates.length > 0 && <div className="max-h-52 space-y-2 overflow-y-auto rounded-2xl bg-black/[0.035] p-2">{candidates.map((candidate) => <button key={candidate.id} type="button" onClick={() => void chooseCandidate(candidate)} disabled={saving} className="flex w-full min-w-0 items-center gap-3 rounded-xl bg-white p-3 text-left shadow-sm hover:ring-1 hover:ring-[var(--theme-accent)]"><span className="grid size-8 shrink-0 place-items-center rounded-full bg-[var(--theme-highlight)]"><Check className="size-4" /></span><span className="min-w-0 flex-1"><b className="block truncate text-sm">{candidate.artist}</b><span className="block truncate text-[11px] text-black/45">{candidate.eventDate} · {candidate.venue}{candidate.city ? `, ${candidate.city}` : ''}</span><span className="mt-1 block text-[11px] font-semibold text-[var(--theme-accent-deep)]">{candidate.songs.length}곡 선택</span></span></button>)}</div>}
+          {candidates.length > 0 && <div className="max-h-52 space-y-2 overflow-y-auto rounded-2xl bg-black/[0.035] p-2">{candidates.map((candidate) => <button key={candidate.id} type="button" onClick={() => void chooseCandidate(candidate)} disabled={saving} className="flex w-full min-w-0 items-center gap-3 rounded-xl bg-white p-3 text-left shadow-sm hover:ring-1 hover:ring-[var(--theme-accent)]"><span className="grid size-8 shrink-0 place-items-center rounded-full bg-[var(--theme-highlight)]"><Check className="size-4" /></span><span className="min-w-0 flex-1"><b className="block truncate text-sm">{editing?.title}</b><span className="block truncate text-[11px] text-black/45">{candidate.eventDate} · {candidate.venue}{candidate.city ? `, ${candidate.city}` : ''}</span><span className="mt-1 block text-[11px] font-semibold text-[var(--theme-accent-deep)]">{candidate.songs.length}곡 선택</span></span></button>)}</div>}
           {editing?.setlistSourceUrl && <a href={editing.setlistSourceUrl} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-xs text-black/45 underline"><ExternalLink className="size-3" />현재 연결된 셋리스트 출처 보기</a>}
           <div className="flex items-center gap-3 text-[10px] uppercase tracking-wider text-black/30"><span className="h-px flex-1 bg-black/10" /><span>또는 직접 입력</span><span className="h-px flex-1 bg-black/10" /></div>
           <Textarea
@@ -336,6 +346,35 @@ function parseSongs(value: string) {
     .map((line) => line.replace(/^\s*(?:\d+[.)]|[-*•])\s*/, '').trim())
     .filter(Boolean)
     .slice(0, 200);
+}
+
+function readArtistAliases(): Record<string, CachedArtistMatch> {
+  if (typeof window === 'undefined') return {};
+  try { return JSON.parse(window.localStorage.getItem('dukjil-setlist-artist-aliases') || '{}') as Record<string, CachedArtistMatch>; }
+  catch { return {}; }
+}
+
+function saveArtistAlias(original: string, resolved: CachedArtistMatch) {
+  if (typeof window === 'undefined' || !original || !resolved.mbid) return;
+  window.localStorage.setItem('dukjil-setlist-artist-aliases', JSON.stringify({ ...readArtistAliases(), [original]: resolved }));
+}
+
+async function resolveArtistForSearch(original: string, title: string): Promise<CachedArtistMatch | null> {
+  const cached = readArtistAliases()[original];
+  if (cached?.mbid) return cached;
+  for (const query of new Set([original, titleArtistHint(title)].filter(Boolean))) {
+    const params = new URLSearchParams({ query, fmt: 'json', limit: '3' });
+    const response = await fetch(`https://musicbrainz.org/ws/2/artist/?${params}`).catch(() => null);
+    if (!response?.ok) continue;
+    const payload = await response.json() as { artists?: Array<{ id?: string; name?: string; score?: number }> };
+    const match = (payload.artists || []).find((artist) => artist.id && artist.name && Number(artist.score || 0) >= 75);
+    if (match?.id && match.name) return { mbid: match.id, name: match.name };
+  }
+  return null;
+}
+
+function titleArtistHint(title: string) {
+  return title.replace(/\b(19|20)\d{2}\b/g, ' ').replace(/\b(world\s+tour|tour|concert|live|festival|fan\s*meeting|in\s+(seoul|korea|busan))\b/gi, ' ').replace(/(월드\s*투어|투어|콘서트|공연|내한|페스티벌|팬미팅)/g, ' ').replace(/[<>{}[\]():|]/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
 function SetlistMetric({
