@@ -27,11 +27,18 @@ export function interpolateGreatCircle(
   if (distance < 1e-9) return from;
   const a = Math.sin((1 - fraction) * distance) / Math.sin(distance);
   const b = Math.sin(fraction * distance) / Math.sin(distance);
-  const x = a * Math.cos(lat1) * Math.cos(lon1) + b * Math.cos(lat2) * Math.cos(lon2);
-  const y = a * Math.cos(lat1) * Math.sin(lon1) + b * Math.cos(lat2) * Math.sin(lon2);
+  const x =
+    a * Math.cos(lat1) * Math.cos(lon1) + b * Math.cos(lat2) * Math.cos(lon2);
+  const y =
+    a * Math.cos(lat1) * Math.sin(lon1) + b * Math.cos(lat2) * Math.sin(lon2);
   const z = a * Math.sin(lat1) + b * Math.sin(lat2);
-  return [(Math.atan2(y, x) * 180) / Math.PI, (Math.atan2(z, Math.sqrt(x * x + y * y)) * 180) / Math.PI];
+  return [
+    (Math.atan2(y, x) * 180) / Math.PI,
+    (Math.atan2(z, Math.sqrt(x * x + y * y)) * 180) / Math.PI,
+  ];
 }
 
 export const formatDistance = (km: number) =>
-  km >= 1000 ? `${Math.round(km).toLocaleString('ko-KR')} km` : `${Math.round(km)} km`;
+  km >= 1000
+    ? `${Math.round(km).toLocaleString('ko-KR')} km`
+    : `${Math.round(km)} km`;

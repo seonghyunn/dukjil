@@ -27,11 +27,27 @@ export const demoConcerts: Concert[] = [
     status: 'attended',
     rating: 5,
     reviews: [
-      { id: 'review-1', body: '바닷바람까지 공연의 일부 같았던 밤.', createdAt: '2026-08-08T22:30:00+09:00' },
-      { id: 'review-2', body: '마지막 떼창을 오래 기억하고 싶다.', createdAt: '2026-08-09T09:10:00+09:00' },
+      {
+        id: 'review-1',
+        body: '바닷바람까지 공연의 일부 같았던 밤.',
+        createdAt: '2026-08-08T22:30:00+09:00',
+      },
+      {
+        id: 'review-2',
+        body: '마지막 떼창을 오래 기억하고 싶다.',
+        createdAt: '2026-08-09T09:10:00+09:00',
+      },
     ],
-    posterUrl: 'https://images.unsplash.com/photo-1501386761578-eac5c94b800a?auto=format&fit=crop&w=800&q=85',
-    officialPosterUrl: 'https://images.unsplash.com/photo-1501386761578-eac5c94b800a?auto=format&fit=crop&w=800&q=85',
+    setlist: [
+      '한 페이지가 될 수 있게',
+      'Welcome to the Show',
+      '예뻤어',
+      '행복했던 날들이었다',
+    ],
+    posterUrl:
+      'https://images.unsplash.com/photo-1501386761578-eac5c94b800a?auto=format&fit=crop&w=800&q=85',
+    officialPosterUrl:
+      'https://images.unsplash.com/photo-1501386761578-eac5c94b800a?auto=format&fit=crop&w=800&q=85',
     posterSource: 'official',
   },
   {
@@ -50,9 +66,18 @@ export const demoConcerts: Concert[] = [
     paidAmount: 205000,
     status: 'attended',
     rating: 4.5,
-    reviews: [{ id: 'review-3', body: '처음 간 해외 페스티벌. 이동은 길었지만 첫 곡이 시작되자 모두 보상받았다.', createdAt: '2026-08-16T10:00:00+09:00' }],
-    posterUrl: 'https://images.unsplash.com/photo-1470229722913-7c0e2dbbafd3?auto=format&fit=crop&w=800&q=85',
-    officialPosterUrl: 'https://images.unsplash.com/photo-1470229722913-7c0e2dbbafd3?auto=format&fit=crop&w=800&q=85',
+    reviews: [
+      {
+        id: 'review-3',
+        body: '처음 간 해외 페스티벌. 이동은 길었지만 첫 곡이 시작되자 모두 보상받았다.',
+        createdAt: '2026-08-16T10:00:00+09:00',
+      },
+    ],
+    setlist: ['Supernatural', 'ETA', 'Ditto', '전전전세'],
+    posterUrl:
+      'https://images.unsplash.com/photo-1470229722913-7c0e2dbbafd3?auto=format&fit=crop&w=800&q=85',
+    officialPosterUrl:
+      'https://images.unsplash.com/photo-1470229722913-7c0e2dbbafd3?auto=format&fit=crop&w=800&q=85',
     posterSource: 'official',
   },
   {
@@ -72,8 +97,11 @@ export const demoConcerts: Concert[] = [
     status: 'attended',
     rating: null,
     reviews: [],
-    posterUrl: 'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?auto=format&fit=crop&w=800&q=85',
-    officialPosterUrl: 'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?auto=format&fit=crop&w=800&q=85',
+    setlist: ['NO PAIN', 'Tik Tak Tok', 'Desert Eagle'],
+    posterUrl:
+      'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?auto=format&fit=crop&w=800&q=85',
+    officialPosterUrl:
+      'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?auto=format&fit=crop&w=800&q=85',
     posterSource: 'official',
   },
   {
@@ -93,8 +121,11 @@ export const demoConcerts: Concert[] = [
     status: 'scheduled',
     rating: null,
     reviews: [],
-    posterUrl: 'https://images.unsplash.com/photo-1506157786151-b8491531f063?auto=format&fit=crop&w=800&q=85',
-    officialPosterUrl: 'https://images.unsplash.com/photo-1506157786151-b8491531f063?auto=format&fit=crop&w=800&q=85',
+    setlist: [],
+    posterUrl:
+      'https://images.unsplash.com/photo-1506157786151-b8491531f063?auto=format&fit=crop&w=800&q=85',
+    officialPosterUrl:
+      'https://images.unsplash.com/photo-1506157786151-b8491531f063?auto=format&fit=crop&w=800&q=85',
     posterSource: 'official',
   },
 ];

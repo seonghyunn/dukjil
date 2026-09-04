@@ -23,6 +23,7 @@ export type Concert = {
   status: ConcertStatus;
   rating: number | null;
   reviews: ConcertReview[];
+  setlist: string[];
   posterUrl: string;
   officialPosterUrl?: string;
   posterSource?: 'official' | 'upload';

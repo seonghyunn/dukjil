@@ -64,6 +64,11 @@ body {
 }
 
 :root {
+  --theme-accent: #ff6b61;
+  --theme-accent-deep: #d94d44;
+  --theme-highlight: #dfff94;
+  --theme-page: #ebe5da;
+  --theme-surface: #f8f5ee;
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);
   --card: oklch(1 0 0);
@@ -146,7 +151,7 @@ body {
 
 @layer components {
   .eyebrow {
-    @apply text-[11px] font-medium uppercase tracking-[0.22em] text-[#d94d44];
+    @apply text-[11px] font-medium uppercase tracking-[0.22em] text-[var(--theme-accent-deep)];
   }
   .screen-title {
     @apply mt-1 text-2xl font-semibold tracking-[-0.04em] sm:text-3xl;
@@ -164,21 +169,49 @@ body {
     border-radius: 999px;
     background: #11110f;
   }
-  .ticket-fallback::before { left: -5px; }
-  .ticket-fallback::after { right: -5px; }
+  .ticket-fallback::before {
+    left: -5px;
+  }
+  .ticket-fallback::after {
+    right: -5px;
+  }
   .status-dot {
     @apply size-2.5 shrink-0 rounded-full bg-black/20;
   }
-  .status-dot.attended { @apply bg-[#dfff94]; }
-  .status-dot.scheduled { @apply bg-[#ff6b61]; }
+  .status-dot.attended {
+    @apply bg-[var(--theme-highlight)];
+  }
+  .status-dot.scheduled {
+    @apply bg-[var(--theme-accent)];
+  }
 }
 
-button { cursor: pointer; }
-::selection { background: #dfff94; color: #17120f; }
-.maplibregl-ctrl-attrib { font-size: 9px !important; background: rgb(0 0 0 / 55%) !important; color: rgb(255 255 255 / 65%) !important; }
-.maplibregl-ctrl-attrib a { color: inherit !important; }
-.maplibregl-canvas { outline: none; }
+button {
+  cursor: pointer;
+}
+::selection {
+  background: var(--theme-highlight);
+  color: #17120f;
+}
+.maplibregl-ctrl-attrib {
+  font-size: 9px !important;
+  background: rgb(0 0 0 / 55%) !important;
+  color: rgb(255 255 255 / 65%) !important;
+}
+.maplibregl-ctrl-attrib a {
+  color: inherit !important;
+}
+.maplibregl-canvas {
+  outline: none;
+}
 
 @media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after { scroll-behavior: auto !important; animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }
